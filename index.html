@@ -644,6 +644,7 @@ function alertFx(){
   if(S.vib){ try{ navigator.vibrate&&navigator.vibrate([150,80,150]); }catch(e){} }
 }
 function setStatus(t){ $('status').textContent=t; }
+window.__nlc=function(){ return {n:bars.length,first:bars.length?new Date((bars[0].time-IST)*1000).toISOString():null,loadingOld:loadingOld,noMoreOld:noMoreOld}; };
 
 // ---- loading ----
 var loadToken=0;
@@ -672,7 +673,7 @@ function loadOlder(){
     bars=old.concat(bars); renderAll(true);
     if(r) chart.timeScale().setVisibleLogicalRange({from:r.from+old.length,to:r.to+old.length});
     setStatus('live · '+old.length+' older candles added');
-  }).catch(function(e){ setStatus('older: '+e.message); }).then(function(){ loadingOld=false; });
+  }).catch(function(e){ console.warn('loadOlder',e); setStatus('older: '+e.message); }).then(function(){ loadingOld=false; });
 }
 var lastTick=0;
 function tick(){
