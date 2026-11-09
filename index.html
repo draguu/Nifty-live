@@ -693,19 +693,31 @@ function upxKey(sym){ if(sym==='idx:in;NSX') return 'NSE_INDEX|Nifty 50'; if(sym
 function upxUnit(tf){ return {'1m':'minutes/1','5m':'minutes/5','15m':'minutes/15','30m':'minutes/30','60m':'hours/1','1d':'days/1'}[tf]; }
 function istDate(ms){ return new Date(ms+IST*1000).toISOString().slice(0,10); }
 function addDays(d,n){ return new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10); }
-function upxGet(url){ var tries=0; return (function go(){ return fetchJSON(url,20000).then(function(j){ if(!j||j.status!=='success') throw new Error('Upstox: '+((j&&j.errors&&j.errors[0]&&j.errors[0].message)||'bad reply')); return (j.data&&j.data.candles)||[]; }).catch(function(e){ if(++tries<3) return new Promise(function(r){ setTimeout(r,800*tries); }).then(go); throw e; }); })(); }
+var UPX_WAIT=[3000,8000,20000];
+function upxGet(url){ var tries=0; return (function go(){ return fetchJSON(url,20000).then(function(j){ if(!j||j.status!=='success') throw new Error('Upstox: '+((j&&j.errors&&j.errors[0]&&j.errors[0].message)||'bad reply')); return (j.data&&j.data.candles)||[]; }).catch(function(e){ if(tries<UPX_WAIT.length){ var w=UPX_WAIT[tries++]; return new Promise(function(r){ setTimeout(r,w); }).then(go); } throw e; }); })(); }
+// saved history (past months never change, so they are downloaded only once per device)
+var idbP=null;
+function idb(){ if(!idbP) idbP=new Promise(function(res){ try{ var r=indexedDB.open('nlc_hist',1); r.onupgradeneeded=function(){ r.result.createObjectStore('m'); }; r.onsuccess=function(){ res(r.result); }; r.onerror=function(){ res(null); }; }catch(e){ res(null); } }); return idbP; }
+function idbGet(k){ return idb().then(function(db){ if(!db) return null; return new Promise(function(res){ try{ var q=db.transaction('m').objectStore('m').get(k); q.onsuccess=function(){ res(q.result||null); }; q.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }); }
+function idbPut(k,v){ return idb().then(function(db){ if(!db) return; try{ db.transaction('m','readwrite').objectStore('m').put(v,k); }catch(e){} }); }
+function idbClear(){ return idb().then(function(db){ if(!db) return; try{ db.transaction('m','readwrite').objectStore('m').clear(); }catch(e){} }); }
 function fetchUpstox(sym,tf,days,prog){
   var key=encodeURIComponent(upxKey(sym)), unit=upxUnit(tf), today=istDate(Date.now()), warm=tf==='1d'?400:45;
   var start=istDate(Date.now()-(days+warm)*86400000); if(tf!=='1d' && start<UPX_START) start=UPX_START;
-  var ranges=[], cur=start;
-  while(cur<=today){ var to;
-    if(tf==='1d') to=addDays(cur,9*365);
-    else { var y=+cur.slice(0,4), m=+cur.slice(5,7); to=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10); }
-    if(to>today) to=today; ranges.push([cur,to]); cur=addDays(to,1); }
+  var step= tf==='1d'?108 : (tf==='30m'||tf==='60m')?3 : 1; // months per request (Upstox limits: 1 month ≤15m, 1 quarter for 30m/1h, 10 years daily)
+  var y0=+start.slice(0,4), m0=+start.slice(5,7)-1; if(tf==='1d') m0=0; else m0=m0-(m0%step);
+  var ranges=[];
+  for(var y=y0,m=m0;;){ var a=new Date(Date.UTC(y,m,1)).toISOString().slice(0,10); if(a>today) break;
+    var b=new Date(Date.UTC(y,m+step,0)).toISOString().slice(0,10); ranges.push([a,b>today?today:b,b<today]);
+    m+=step; while(m>=12){ m-=12; y++; } }
   var base='https://api.upstox.com/v3/historical-candle/', parts=new Array(ranges.length), idx=0, done=0;
-  function worker(){ if(idx>=ranges.length) return Promise.resolve(); var k=idx++, r=ranges[k];
-    return upxGet(base+key+'/'+unit+'/'+r[1]+'/'+r[0]).then(function(c){ parts[k]=c; done++; if(prog) prog(done,ranges.length); return worker(); }); }
-  var ws=[]; for(var w=0;w<Math.min(5,ranges.length);w++) ws.push(worker());
+  function worker(){ if(idx>=ranges.length) return Promise.resolve(); var k=idx++, r=ranges[k], ck=upxKey(sym)+'|'+unit+'|'+r[0]+'|'+r[1];
+    var got=function(c){ parts[k]=c; done++; if(prog) prog(done,ranges.length); return worker(); };
+    return (r[2]?idbGet(ck):Promise.resolve(null)).then(function(c){
+      if(c) return got(c);
+      return upxGet(base+key+'/'+unit+'/'+r[1]+'/'+r[0]).then(function(c){ if(r[2]) idbPut(ck,c); return new Promise(function(z){ setTimeout(z,250); }).then(function(){ return got(c); }); });
+    }); }
+  var ws=[]; for(var w=0;w<Math.min(2,ranges.length);w++) ws.push(worker());
   return Promise.all(ws).then(function(){
     return upxGet(base+'intraday/'+key+'/'+unit).catch(function(){ return []; });
   }).then(function(live){
@@ -1364,11 +1376,11 @@ function getBtData(sym,tf,days,prog){
   if(c && Date.now()-c.at<5*60000) return Promise.resolve(c.D);
   var cb= tf==='1d'?5000:30000;
   function mc(){ return fetchBars(sym,tf,{days:tf==='1d'?7300:400,cb:cb}).then(function(b){ return {b:b,src:'Moneycontrol'}; }); }
-  var p= up ? fetchUpstox(sym,tf,days,prog).then(function(b){ if(b.length<50) throw new Error('too little Upstox data'); return {b:b,src:'Upstox'}; }).catch(function(e){ console.warn('Upstox failed, using Moneycontrol',e); return mc(); }) : mc();
-  return p.then(function(r){ var Dx=cols(r.b); Dx.src=r.src; dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
+  var p= up ? fetchUpstox(sym,tf,days,prog).then(function(b){ if(b.length<50) throw new Error('too little Upstox data'); return {b:b,src:'Upstox'}; }).catch(function(e){ console.warn('Upstox failed, using Moneycontrol',e); return mc().then(function(r){ r.upFail=true; return r; }); }) : mc();
+  return p.then(function(r){ var Dx=cols(r.b); Dx.src=r.src; Dx.upFail=!!r.upFail; if(!r.upFail) dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
 }
-function btProg(out,label){ return function(d,n){ out.innerHTML='<div class="card">'+label+' – downloading history '+d+' / '+n+'…</div>'; }; }
-function btSrcNote(Dx,cut,days){ var short=Dx.t[cut.i]>cut.c+7*86400; return ' · data: '+Dx.src+(short?' <span style="color:var(--warn)">(only available from '+dmy(Dx.t[cut.i])+')</span>':''); }
+function btProg(out,label){ return function(d,n){ out.innerHTML='<div class="card">'+label+' – getting history '+d+' / '+n+'…<div class="hint">First time for a symbol + timeframe takes a little while; after that it is saved on this device.</div></div>'; }; }
+function btSrcNote(Dx,cut,days){ var short=Dx.t[cut.i]>cut.c+7*86400; return ' · data: '+Dx.src+(short?' <span style="color:var(--warn)">(only available from '+dmy(Dx.t[cut.i])+(Dx.src==='Moneycontrol'&&Dx.upFail?' – long-history server busy, try again in a few minutes':'')+')</span>':''); }
 function statCards(st){
   var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; };
   return '<div class="stats">'+c('Trades',st.n)+c('Win rate',fmt(st.win,1)+'%')+c('Profit factor',fmt(st.pf),st.pf>=1?'up':'dn')+c('Net points',fmt(st.net,1),st.net>=0?'up':'dn')+c('Avg win / loss',fmt(st.avgW,1)+' / '+fmt(st.avgL,1))+c('Per trade',fmt(st.exp,2),st.exp>=0?'up':'dn')+c('Max drawdown',fmt(st.dd,1)+' pts','dn')+c('Losing streak',st.maxL)+c('Trades / month',fmt(st.perMonth,1))+'</div>';
