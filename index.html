@@ -179,6 +179,11 @@ td:first-child,th:first-child{text-align:left}
         <label class="lbl" id="btPremL">Avg option premium ₹<input id="btPrem" type="number" step="any" value="100"></label>
         <label class="lbl" id="btDeltaL">Option delta<input id="btDelta" type="number" step="0.05" value="0.5"></label>
       </div>
+      <div class="row" id="btCompRow" style="margin-top:6px;align-items:flex-end">
+        <label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btComp" type="checkbox" style="width:auto"> Add 1 lot when profit can buy another lot</label>
+        <label class="lbl" id="btCapL">Starting capital ₹<input id="btCap" type="number" step="any" value="15000"></label>
+        <label class="lbl" id="btMarginL">Margin per futures lot ₹<input id="btMargin" type="number" step="any" value="150000"></label>
+      </div>
       <div class="row" style="margin-top:8px">
         <button class="btn pri grow" id="btRun">▶ Run backtest</button>
         <button class="btn" id="btAll">Compare all</button>
@@ -1286,22 +1291,32 @@ fillSym($('btSym'),S.sym);
 Object.keys(TF).forEach(function(tf){ $('btTf').appendChild(el('option',{value:tf},tf)); });
 $('btTf').value=S.bt.tf||'15m'; $('btDays').value=String(S.bt.days||365); $('btCost').value=S.bt.cost!=null?S.bt.cost:2;
 $('btInst').value=S.bt.inst||'opt'; $('btQty').value=S.bt.qty||75; $('btPrem').value=S.bt.prem||100; $('btDelta').value=S.bt.delta||0.5;
-function btInstUI(){ var k=$('btInst').value; $('btQtyL').style.display=k==='pts'?'none':''; $('btPremL').style.display=k==='opt'?'':'none'; $('btDeltaL').style.display=k==='opt'?'':'none'; }
+$('btComp').checked=!!S.bt.comp; $('btCap').value=S.bt.cap||15000; $('btMargin').value=S.bt.margin||150000;
+function btInstUI(){ var k=$('btInst').value, cm=$('btComp').checked; $('btQtyL').style.display=k==='pts'?'none':''; $('btPremL').style.display=k==='opt'?'':'none'; $('btDeltaL').style.display=k==='opt'?'':'none'; $('btCompRow').style.display=k==='pts'?'none':''; $('btCapL').style.display=cm?'':'none'; $('btMarginL').style.display=(cm&&k==='fut')?'':'none'; }
 btInstUI();
-['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value}; save(); btInstUI(); }; });
-function btCfg(){ return {inst:$('btInst').value,qty:Math.max(1,+$('btQty').value||1),prem:+$('btPrem').value||100,delta:+$('btDelta').value||0.5}; }
+['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta','btComp','btCap','btMargin'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value,comp:$('btComp').checked,cap:+$('btCap').value,margin:+$('btMargin').value}; save(); btInstUI(); }; });
+function btCfg(){ return {inst:$('btInst').value,qty:Math.max(1,+$('btQty').value||1),prem:+$('btPrem').value||100,delta:+$('btDelta').value||0.5,comp:$('btInst').value!=='pts'&&$('btComp').checked,cap:Math.max(0,+$('btCap').value||0),margin:Math.max(1,+$('btMargin').value||1)}; }
 function zCharges(kind,buy,sell){ var b,stt,tx,st;
   if(kind==='opt'){ b=40; stt=0.0015*sell; tx=0.0003553*(buy+sell); st=0.00003*buy; }
   else if(kind==='fut'){ b=Math.min(20,0.0003*buy)+Math.min(20,0.0003*sell); stt=0.0005*sell; tx=0.0000183*(buy+sell); st=0.00002*buy; }
   else { b=Math.min(20,0.0003*buy)+Math.min(20,0.0003*sell); stt=0.00025*sell; tx=0.0000307*(buy+sell); st=0.00003*buy; }
   var sebi=(buy+sell)*1e-6, gst=0.18*(b+tx+sebi); return {total:b+stt+tx+st+sebi+gst,brok:b,stt:stt,tx:tx,stamp:st,sebi:sebi,gst:gst}; }
+function lotCost(cfg,t){ return cfg.inst==='opt'? cfg.prem*cfg.qty : cfg.inst==='fut'? cfg.margin : t.entry*cfg.qty; }
 function rupeeTrades(tr,cfg){
-  var agg={brok:0,stt:0,tx:0,stamp:0,sebi:0,gst:0,total:0};
-  tr.forEach(function(t){ if(t.why==='Open'){ t.rs=0; t.chg=0; return; } var q=cfg.qty, buy, sell, gross;
+  var agg={brok:0,stt:0,tx:0,stamp:0,sebi:0,gst:0,total:0}, cap=cfg.cap, lots=1, maxLots=1, bust=null, ups=0, downs=0;
+  tr.forEach(function(t){ t.lots=1; t.skip=false; if(t.why==='Open'){ t.rs=0; t.chg=0; return; }
+    if(cfg.comp){ var lc=lotCost(cfg,t);
+      if(bust || cap<lc){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; }
+      if(cap<lots*lc){ lots=Math.max(1,Math.floor(cap/lc)); downs++; }
+      else if(cap>=(lots+1)*lc){ lots++; ups++; }
+      if(lots>maxLots) maxLots=lots; t.lots=lots; }
+    var q=cfg.qty*t.lots, buy, sell, gross;
     if(cfg.inst==='opt'){ var P=cfg.prem, out=Math.max(0.05,P+t.pts*cfg.delta); buy=P*q; sell=out*q; gross=sell-buy; }
     else { if(t.side>0){ buy=t.entry*q; sell=t.exit*q; } else { sell=t.entry*q; buy=t.exit*q; } gross=t.pts*q; }
-    var c=zCharges(cfg.inst,buy,sell); t.chg=c.total; t.rs=gross-c.total; for(var k in agg) agg[k]+=c[k]; });
-  var st=btStats(tr.map(function(t){ return {pts:t.rs,why:t.why,t:t.t}; })); st.chg=agg; st.gross=st.net+agg.total; return st;
+    var c=zCharges(cfg.inst,buy,sell); t.chg=c.total; t.rs=gross-c.total; cap+=t.rs; t.cap=cap; for(var k in agg) agg[k]+=c[k]; });
+  var st=btStats(tr.map(function(t){ return {pts:t.rs,why:t.skip?'Open':t.why,t:t.t}; })); st.chg=agg; st.gross=st.net+agg.total;
+  if(cfg.comp){ st.comp={start:cfg.cap,end:cap,maxLots:maxLots,lots:lots,ups:ups,downs:downs,bust:bust,skipped:tr.filter(function(t){return t.skip;}).length,first:tr.length?lotCost(cfg,tr[0]):0}; }
+  return st;
 }
 function rsCard(rs,cfg){
   var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; }, R=function(x){ return '₹'+Math.round(x).toLocaleString('en-IN'); };
@@ -1309,6 +1324,8 @@ function rsCard(rs,cfg){
     c('Net profit',R(rs.net),rs.net>=0?'up':'dn')+c('Before charges',R(rs.gross),rs.gross>=0?'up':'dn')+c('Total charges',R(rs.chg.total),'dn')+
     c('Win rate after charges',fmt(rs.win,1)+'%')+c('Profit factor',fmt(rs.pf),rs.pf>=1?'up':'dn')+c('Max drawdown',R(rs.dd),'dn')+
     c('Avg net / trade',R(rs.exp),rs.exp>=0?'up':'dn')+c('Charges / trade',R(rs.n?rs.chg.total/rs.n:0))+c('Avg win / loss',R(rs.avgW)+' / '+R(rs.avgL))+'</div>'+
+    (rs.comp?'<h4 style="margin:10px 0 4px">Lot compounding</h4><div class="stats">'+c('Starting capital',R(rs.comp.start))+c('Final capital',R(rs.comp.end),rs.comp.end>=rs.comp.start?'up':'dn')+c('Return',fmt(rs.comp.start?100*(rs.comp.end-rs.comp.start)/rs.comp.start:0,1)+'%',rs.comp.end>=rs.comp.start?'up':'dn')+c('Lots now',rs.comp.lots)+c('Max lots',rs.comp.maxLots)+c('Lots added / cut',rs.comp.ups+' / '+rs.comp.downs)+'</div>'+
+      '<p class="hint" style="margin:6px 0 0">Starts with 1 lot. Before each trade, if capital can pay for one more lot (lot cost '+(cfg.inst==='opt'?'= premium × qty = '+R(cfg.prem*cfg.qty):cfg.inst==='fut'?'= margin '+R(cfg.margin):'= entry price × qty')+'), 1 lot is added. If losses mean capital can no longer pay for the current lots, lots are reduced to what it can pay for.'+(rs.comp.bust?' <b class="dn">Capital fell below 1 lot on '+dmy(rs.comp.bust)+' – '+rs.comp.skipped+' later trades skipped.</b>':'')+'</p>':'')+
     '<p class="hint" style="margin:8px 0 0">Charges: brokerage '+R(rs.chg.brok)+' · STT '+R(rs.chg.stt)+' · exchange '+R(rs.chg.tx)+' · stamp '+R(rs.chg.stamp)+' · GST '+R(rs.chg.gst)+' · SEBI '+R(rs.chg.sebi)+'.'+(cfg.inst==='opt'?' Option P&L is estimated as index points × delta (no time decay / IV change), so treat it as optimistic.':'')+'</p></div>';
 }
 var dataCache={};
@@ -1336,9 +1353,9 @@ function runBt(){
     if(rs) html+=rsCard(rs,cfg);
     html+='<div class="card"><h4 style="margin-top:0">Equity curve ('+(rs?'₹ after charges':'points')+')</h4><div id="eq"></div></div>';
     // by month
-    var mon={}; tr.forEach(function(t){ if(t.why==='Open') return; var d=new Date(t.t*1000), k=d.getUTCFullYear()+'-'+two(d.getUTCMonth()+1); mon[k]=mon[k]||{n:0,p:0,w:0,r:0}; mon[k].n++; mon[k].p+=t.pts; mon[k].r+=(t.rs||0); if(t.pts>0) mon[k].w++; });
+    var mon={}; tr.forEach(function(t){ if(t.why==='Open'||t.skip) return; var d=new Date(t.t*1000), k=d.getUTCFullYear()+'-'+two(d.getUTCMonth()+1); mon[k]=mon[k]||{n:0,p:0,w:0,r:0}; mon[k].n++; mon[k].p+=t.pts; mon[k].r+=(t.rs||0); if(t.pts>0) mon[k].w++; });
     html+='<div class="card"><h4 style="margin-top:0">By month</h4><div style="max-height:220px;overflow:auto"><table><tr><th>Month</th><th>Trades</th><th>Win%</th><th>Points</th>'+(rs?'<th>₹ net</th>':'')+'</tr>'+Object.keys(mon).sort().reverse().map(function(k){ var m=mon[k]; return '<tr><td>'+k+'</td><td>'+m.n+'</td><td>'+fmt(100*m.w/m.n,0)+'</td><td class="'+(m.p>=0?'up':'dn')+'">'+fmt(m.p,1)+'</td>'+(rs?'<td class="'+(m.r>=0?'up':'dn')+'">'+Math.round(m.r).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
-    html+='<div class="card"><div class="row"><h4 class="grow" style="margin:0">Trades ('+tr.length+')</h4><button class="btn sm" id="btShow">Show on chart</button></div><div style="max-height:360px;overflow:auto;margin-top:6px"><table><tr><th>Date</th><th>Side</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>Pts</th>'+(rs?'<th>₹ net</th>':'')+'</tr>'+tr.slice().reverse().map(function(t){ return '<tr><td>'+dmy(t.t)+' '+(tf==='1d'?'':hhmm(t.t))+'</td><td class="'+(t.side>0?'up':'dn')+'">'+(t.side>0?'CALL':'PUT')+'</td><td>'+fmt(t.entry,1)+'</td><td>'+fmt(t.stop,1)+'</td><td>'+fmt(t.tgt,1)+'</td><td>'+fmt(t.exit,1)+'</td><td>'+t.why+'</td><td class="'+(t.pts>=0?'up':'dn')+'">'+fmt(t.pts,1)+'</td>'+(rs?'<td class="'+((t.rs||0)>=0?'up':'dn')+'">'+Math.round(t.rs||0).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
+    html+='<div class="card"><div class="row"><h4 class="grow" style="margin:0">Trades ('+tr.length+')</h4><button class="btn sm" id="btShow">Show on chart</button></div><div style="max-height:360px;overflow:auto;margin-top:6px"><table><tr><th>Date</th><th>Side</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>Pts</th>'+(rs?(rs.comp?'<th>Lots</th>':'')+'<th>₹ net</th>'+(rs.comp?'<th>Capital</th>':''):'')+'</tr>'+tr.slice().reverse().map(function(t){ return '<tr><td>'+dmy(t.t)+' '+(tf==='1d'?'':hhmm(t.t))+'</td><td class="'+(t.side>0?'up':'dn')+'">'+(t.side>0?'CALL':'PUT')+'</td><td>'+fmt(t.entry,1)+'</td><td>'+fmt(t.stop,1)+'</td><td>'+fmt(t.tgt,1)+'</td><td>'+fmt(t.exit,1)+'</td><td>'+t.why+'</td><td class="'+(t.pts>=0?'up':'dn')+'">'+fmt(t.pts,1)+'</td>'+(rs?(rs.comp?'<td>'+(t.skip?'–':t.lots)+'</td>':'')+'<td class="'+((t.rs||0)>=0?'up':'dn')+'">'+(t.skip?'skipped':Math.round(t.rs||0).toLocaleString('en-IN'))+'</td>'+(rs.comp?'<td>'+(t.cap!=null&&!t.skip?Math.round(t.cap).toLocaleString('en-IN'):'–')+'</td>':''):'')+'</tr>'; }).join('')+'</table></div></div>';
     out.innerHTML=html;
     // equity chart
     if(eqChart){ try{eqChart.remove();}catch(e){} }
