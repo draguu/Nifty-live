@@ -99,6 +99,7 @@ td:first-child,th:first-child{text-align:left}
     <button class="btn sm" id="btnReplay">⏪ Replay</button>
     <button class="btn sm" id="btnInd">ƒx Indicators</button>
     <button class="btn sm" id="btnStratOn">⚑ <span id="stratOnCount">0</span></button>
+    <button class="btn sm" id="btnTemp" style="display:none;color:var(--warn)">✕ Test strategy</button>
   </div>
   <div id="chartWrap">
     <div id="legend"></div>
@@ -788,7 +789,7 @@ function lastClosedIdx(){ if(!D||!D.n) return -1; if(RP.on) return D.n-1; var L=
 function renderSignals(){
   if(!D) return;
   var marks=[], tfMin=TF[S.tf].min, lc=lastClosedIdx();
-  var active=S.strats.filter(function(s){return s.onChart;});
+  var active=S.strats.filter(function(s){return s.onChart && !(chartTemp&&chartTemp.id===s.id);}); if(chartTemp) active.push(chartTemp); $('btnTemp').style.display=chartTemp?'':'none';
   $('stratOnCount').textContent=active.length;
   active.forEach(function(s,si){
     var tr; try{ tr=backtest(D,s,tfMin,0,lc); }catch(e){ console.error(e); return; }
@@ -1273,7 +1274,7 @@ function editStrategy(orig,isNew){
 }
 
 // ---------------- backtest UI ----------------
-var btMarks=null, eqChart=null;
+var btMarks=null, eqChart=null, chartTemp=null;
 function fillBtStrat(){ var v=$('btStrat').value; $('btStrat').innerHTML=''; S.strats.forEach(function(s){ $('btStrat').appendChild(el('option',{value:s.id},s.name)); }); if(v && S.strats.some(function(s){return s.id===v;})) $('btStrat').value=v; }
 fillSym($('btSym'),S.sym);
 Object.keys(TF).forEach(function(tf){ $('btTf').appendChild(el('option',{value:tf},tf)); });
@@ -1365,11 +1366,20 @@ function btQuick(){
   var bs=el('button',{class:'btn sm pri'},'💾 Save to strategy'); bs.onclick=function(){ var i=S.strats.findIndex(function(x){return x.id===s.id;}); if(i>=0){ var keep=S.strats[i].onChart; S.strats[i]=JSON.parse(JSON.stringify(s)); S.strats[i].onChart=keep; } btDirty=false; save(); renderSignals(); btQuick(); toast('Saved “'+s.name+'”',2000); };
   var bn=el('button',{class:'btn sm'},'Save as new'); bn.onclick=function(){ var c=JSON.parse(JSON.stringify(s)); c.id=uid(); c.name=s.name+' (v'+(S.strats.length+1)+')'; c.onChart=false; S.strats.push(c); save(); btWork=null; btDirty=false; fillBtStrat(); $('btStrat').value=c.id; btQuick(); toast('Saved as “'+c.name+'”',2500); };
   var br=el('button',{class:'btn sm'},'↺ Reset'); br.onclick=function(){ btWork=null; btDirty=false; btQuick(); runBt(); };
-  r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
+  var ba=el('button',{class:'btn sm',style:'border-color:var(--warn)'},'📈 Apply to chart + replay'); ba.onclick=function(){
+    var c=JSON.parse(JSON.stringify(s)); c.name=s.name+(btDirty?' (test)':''); c.onChart=true; chartTemp=c;
+    var sym=$('btSym').value, tf=$('btTf').value, need=(S.sym!==sym||S.tf!==tf);
+    S.sym=sym; S.tf=tf; save(); fillSym($('symSel'),sym); Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); });
+    showView('chart'); if(RP.on) rpExit();
+    var go=function(){ renderSignals(); rpEnter(); toast('“'+c.name+'” is on the chart. Tap a candle to start the replay, then ▶ — its CALL/PUT signals and results appear as candles play.',7000); };
+    if(need){ var pr=loadAll(); if(pr&&pr.then) pr.then(go); else go(); } else go();
+  };
+  r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
   d.appendChild(el('p',{class:'hint'},'Changes re-run the backtest automatically. They only affect this test until you save.'));
   box.appendChild(d);
 }
 $('btStrat').onchange=function(){ btWork=null; btDirty=false; btQuick(); };
+$('btnTemp').onclick=function(){ chartTemp=null; renderSignals(); toast('Test strategy removed from chart',2000); };
 $('btAll').onclick=function(){
   var sym=$('btSym').value, tf=$('btTf').value, days=Math.min(+$('btDays').value, tf==='1d'?99999:365), cost=+$('btCost').value||0, out=$('btOut');
   out.innerHTML='<div class="card">Running all strategies…</div>';
