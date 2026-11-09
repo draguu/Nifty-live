@@ -367,17 +367,8 @@ function summarize(trades){
   function render(res, first){
     var c=res.candles; if(!c.length){ setStatus('no data for '+st.sym+' '+st.tf); return; }
     var s=st.settings, tf=TF_MIN[st.tf];
-    if(first || !candlesData.length){
-      candle.setData(c.map(function(x){return {time:x.time,open:x.open,high:x.high,low:x.low,close:x.close};}));
-      volume.setData(c.map(function(x){return {time:x.time,value:x.volume,color:x.close>=x.open?'#1e5f58':'#7a2f2d'};}));
-    } else {
-      var from=Math.max(0,c.length-4);
-      for(var i=from;i<c.length;i++){
-        var x=c[i];
-        candle.update({time:x.time,open:x.open,high:x.high,low:x.low,close:x.close});
-        volume.update({time:x.time,value:x.volume,color:x.close>=x.open?'#1e5f58':'#7a2f2d'});
-      }
-    }
+    candle.setData(c.map(function(x){return {time:x.time,open:x.open,high:x.high,low:x.low,close:x.close};}));
+    volume.setData(c.map(function(x){return {time:x.time,value:x.volume,color:x.close>=x.open?'#1e5f58':'#7a2f2d'};}));
     candlesData=c;
     emaS.setData(s.emaOn ? calcEMA(c,Math.max(1,Math.round(s.emaLen))) : []);
     var vw=calcVWAP(c);
