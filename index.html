@@ -22,10 +22,18 @@ nav.tabs button b{display:block;font-size:17px;line-height:1.1}
 nav.tabs button.on{color:#fff}
 nav.tabs button.on b{color:var(--acc)}
 .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-wrap:wrap}
-.topbar{flex-wrap:nowrap}.topbar #px{font-weight:700;white-space:nowrap}.topbar #chg{white-space:nowrap}
-select.cmp{width:auto;max-width:150px;padding:5px 8px}#tfSel.cmp{max-width:70px}
+.topbar{flex-wrap:nowrap;min-width:0;overflow:hidden}
+.topbar>*{min-width:0}
+.topbar #px{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar #chg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+select.cmp{width:auto;padding:5px 6px;flex:0 1 auto}
+#symSel.cmp{max-width:30vw}#tfSel.cmp{max-width:60px;flex:0 0 auto}.topbar #px{flex:0 0 auto;font-size:14px}
+.btn.ico,#btnTemp{flex:0 0 auto}
 .btn.ico{width:36px;padding:5px 0;font-size:16px}
-.toolbar{gap:6px;padding:6px 8px}
+@media(max-width:380px){.topbar #chg{display:none}}
+.toolbar{gap:6px;padding:6px 8px;flex-wrap:wrap}
+.toolbar .btn{flex:0 0 auto}
+.toolbar #symTxt{flex:1 1 120px;min-width:0;width:auto!important}
 .btn,select,input[type=text],input[type=number],input[type=time]{background:var(--bg3);border:1px solid var(--bd);border-radius:7px;padding:6px 9px;font-size:14px}
 .btn{cursor:pointer;white-space:nowrap}
 .btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
@@ -129,8 +137,7 @@ td:first-child,th:first-child{text-align:left}
     <button class="btn sm" id="btnDraw" title="Drawing tools">✏ Draw</button>
     <button class="btn sm" id="btnReplay">⏪ Replay</button>
     <button class="btn sm" id="zFit" title="Fit all">⤢ Fit</button>
-    <span class="grow"></span>
-    <input id="symTxt" type="text" placeholder="Other NSE symbol" style="width:130px" autocapitalize="characters">
+    <input id="symTxt" type="text" placeholder="Other NSE symbol" autocapitalize="characters">
     <button class="btn sm" id="symGo">Go</button>
     <span id="tfBtns" style="display:none"></span>
   </div>
