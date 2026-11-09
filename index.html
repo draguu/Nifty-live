@@ -22,6 +22,10 @@ nav.tabs button b{display:block;font-size:17px;line-height:1.1}
 nav.tabs button.on{color:#fff}
 nav.tabs button.on b{color:var(--acc)}
 .bar{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.topbar{flex-wrap:nowrap}.topbar #px{font-weight:700;white-space:nowrap}.topbar #chg{white-space:nowrap}
+select.cmp{width:auto;max-width:150px;padding:5px 8px}#tfSel.cmp{max-width:70px}
+.btn.ico{width:36px;padding:5px 0;font-size:16px}
+.toolbar{gap:6px;padding:6px 8px}
 .btn,select,input[type=text],input[type=number],input[type=time]{background:var(--bg3);border:1px solid var(--bd);border-radius:7px;padding:6px 9px;font-size:14px}
 .btn{cursor:pointer;white-space:nowrap}
 .btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
@@ -41,7 +45,7 @@ small,.small{font-size:11px}
 #zoom{position:absolute;right:62px;bottom:30px;z-index:6;display:flex;gap:5px}
 .psl{position:absolute;z-index:7;touch-action:none;-webkit-user-select:none;user-select:none;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);transition:background .15s,opacity .15s;opacity:.75}
 .psl.v{width:30px;top:24%;height:44%}
-.psl.h{height:30px;bottom:72px;left:44px;right:66px}
+.psl.h{height:30px;bottom:30px;left:44px;right:110px}
 .psl.left.v{left:6px}.psl.right.v{right:66px}
 .psl .kn{position:absolute;border-radius:12px;background:rgba(255,255,255,.30);box-shadow:0 1px 6px #0008}
 .psl.v .kn{left:3px;right:3px;height:30px}.psl.h .kn{top:3px;bottom:3px;width:44px}
@@ -110,33 +114,33 @@ td:first-child,th:first-child{text-align:left}
 
 <!-- ============ CHART ============ -->
 <section class="view on" id="v-chart">
-  <div class="bar">
-    <select id="symSel"></select>
-    <input id="symTxt" type="text" placeholder="NSE symbol" style="width:105px" autocapitalize="characters">
-    <button class="btn sm" id="symGo">Go</button>
-    <span class="grow"></span>
+  <div class="bar topbar">
+    <select id="symSel" class="cmp"></select>
+    <select id="tfSel" class="cmp"></select>
     <span id="px">--</span><span id="chg" class="small"></span>
-  </div>
-  <div class="bar" id="tfs">
-    <span id="tfBtns" class="row" style="gap:4px"></span>
     <span class="grow"></span>
+    <button class="btn sm" id="btnTemp" style="display:none;color:var(--warn)">✕ Test</button>
+    <button class="btn sm ico" id="btnTools" title="Tools">☰</button>
+  </div>
+  <div class="bar toolbar" id="toolBar" style="display:none">
+    <button class="btn sm" id="btnInd">ƒx Indicators</button>
+    <button class="btn sm" id="btnStratOn">⚑ Strategies <span id="stratOnCount">0</span></button>
     <button class="btn sm" id="btnMtf" title="Overlay candles of a higher timeframe">⧉ MTF</button>
     <button class="btn sm" id="btnDraw" title="Drawing tools">✏ Draw</button>
     <button class="btn sm" id="btnReplay">⏪ Replay</button>
-    <button class="btn sm" id="btnInd">ƒx Indicators</button>
-    <button class="btn sm" id="btnStratOn">⚑ <span id="stratOnCount">0</span></button>
-    <button class="btn sm" id="btnTemp" style="display:none;color:var(--warn)">✕ Test strategy</button>
+    <button class="btn sm" id="zFit" title="Fit all">⤢ Fit</button>
+    <span class="grow"></span>
+    <input id="symTxt" type="text" placeholder="Other NSE symbol" style="width:130px" autocapitalize="characters">
+    <button class="btn sm" id="symGo">Go</button>
+    <span id="tfBtns" style="display:none"></span>
   </div>
   <div id="chartWrap">
     <div id="legend"></div>
     <div id="chart"></div>
     <div id="status">loading…</div>
-    <div class="psl v" id="slZoom"><span class="ic" style="top:4px">+</span><span class="ic" style="bottom:4px">−</span><div class="kn"></div><div class="tip"></div></div>
-    <div class="psl h" id="slPan"><span class="ic" style="left:8px">◀</span><span class="ic" style="right:8px">▶</span><div class="kn"></div><div class="tip"></div></div>
+    <div class="psl v" id="slZoom" title="Candle height (double-tap to reset)"><span class="ic" style="top:5px">↕</span><div class="kn"></div><div class="tip"></div></div>
+    <div class="psl h" id="slPan" title="Candle width – wide / narrow view"><span class="ic" style="left:9px">↔</span><div class="kn"></div><div class="tip"></div></div>
     <div id="zoom">
-      <button id="zOut" title="Zoom out">−</button>
-      <button id="zIn" title="Zoom in">+</button>
-      <button id="zFit" title="Fit all">⤢</button>
       <button id="zEnd" title="Go to latest">⇥</button>
     </div>
   </div>
@@ -241,7 +245,7 @@ td:first-child,th:first-child{text-align:left}
         <label class="chk"><input type="checkbox" id="setVib"> Vibrate</label>
         <label class="chk"><input type="checkbox" id="setVol"> Volume bars</label>
         <label class="chk"><input type="checkbox" id="setDay"> Day separator lines</label>
-        <label class="lbl">Zoom &amp; pan sliders<select id="setSl"><option value="left">Left hand side</option><option value="right">Right hand side</option><option value="off">Off</option></select></label>
+        <label class="lbl">Chart sliders (↕ height, ↔ width)<select id="setSl"><option value="left">Left hand side</option><option value="right">Right hand side</option><option value="off">Off</option></select></label>
       </div>
       <p class="hint">Outside market hours (Mon–Fri 9:00–15:35 IST) the chart refreshes every 30 s to save data.</p>
     </div>
@@ -846,6 +850,7 @@ function buildChart(){
   });
   cSeries=chart.addSeries(LC.CandlestickSeries,{upColor:'#26a69a',downColor:'#ef5350',borderVisible:false,wickUpColor:'#26a69a',wickDownColor:'#ef5350',priceLineVisible:true});
   markersApi=LC.createSeriesMarkers(cSeries,[]);
+  if(typeof candAuto==='function') cSeries.applyOptions({autoscaleInfoProvider:candAuto});
   if(S.vol){ vSeries=chart.addSeries(LC.HistogramSeries,{priceFormat:{type:'volume'},priceScaleId:'vol',lastValueVisible:false,priceLineVisible:false}); chart.priceScale('vol').applyOptions({scaleMargins:{top:0.82,bottom:0}}); } else vSeries=null;
   // indicator series
   var pane=0;
@@ -861,6 +866,7 @@ function buildChart(){
       if(ind.t==='MACD' && o==='hist') s=chart.addSeries(LC.HistogramSeries,{color:col,priceLineVisible:false,lastValueVisible:false},pIdx);
       else if(def.dots) s=chart.addSeries(LC.LineSeries,{color:col,lineVisible:false,pointMarkersVisible:true,pointMarkersRadius:1.5,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false},pIdx);
       else s=chart.addSeries(LC.LineSeries,{color:col,lineWidth:(o==='mid'||def.daily||ind.t==='ZZ')?1:2,lineStyle:(def.daily||o==='mid')?2:0,priceLineVisible:false,lastValueVisible:def.pane,crosshairMarkerVisible:false},pIdx);
+      if(pIdx===0 && typeof ovAuto==='function') s.applyOptions({autoscaleInfoProvider:ovAuto});
       list.push({o:o,s:s,col:col});
     });
     if(def.levels && list.length){ def.levels.forEach(function(lv){ list[0].s.createPriceLine({price:lv,color:'#555c6b',lineWidth:1,lineStyle:2,axisLabelVisible:false}); }); }
@@ -1215,8 +1221,6 @@ document.addEventListener('keydown',function(e){
 
 // ---- zoom buttons ----
 function zoom(f){ var ts=chart.timeScale(), r=ts.getVisibleLogicalRange(); if(!r) return; var w=r.to-r.from, nw=Math.max(10,w*f), right=r.to; ts.setVisibleLogicalRange({from:right-nw,to:right}); }
-$('zIn').onclick=function(){ zoom(0.65); };
-$('zOut').onclick=function(){ zoom(1.55); };
 $('zFit').onclick=function(){ chart.timeScale().fitContent(); };
 $('zEnd').onclick=function(){ chart.timeScale().scrollToRealTime(); };
 
@@ -1226,37 +1230,47 @@ fillSym($('symSel'),S.sym);
 $('symSel').onchange=function(){ S.sym=this.value; save(); loadAll(); };
 $('symGo').onclick=function(){ var v=$('symTxt').value.trim().toUpperCase(); if(!v) return; S.sym=v; fillSym($('symSel'),v); save(); loadAll(); $('symTxt').value=''; };
 $('symTxt').onkeydown=function(e){ if(e.key==='Enter') $('symGo').click(); };
+Object.keys(TF).forEach(function(tf){ $('tfSel').appendChild(el('option',{value:tf},tf)); }); $('tfSel').value=S.tf;
+$('tfSel').onchange=function(){ var v=this.value; var b=Array.prototype.find.call($('tfBtns').children,function(x){ return x.textContent===v; }); if(b) b.click(); };
+$('btnTools').onclick=function(){ var t=$('toolBar'), show=t.style.display==='none'; t.style.display=show?'flex':'none'; $('btnTools').className='btn sm ico'+(show?' on':''); setTimeout(function(){ try{ chart.applyOptions({}); }catch(e){} slPaint(); },50); };
 S.mtf=S.mtf||{on:false,tf:'15m'};
 $('btnMtf').onclick=function(){ var bar=$('mtfBar'), show=bar.style.display==='none'; bar.style.display=show?'flex':'none'; mtfUI(); };
 $('mtfOff').onclick=function(){ S.mtf.on=false; save(); mtfUI(); if(ovReq) ovReq(); $('mtfBar').style.display='none'; };
 mtfUI();
-// ---------------- Procreate-style zoom / pan sliders ----------------
-var SL={busy:false};
+// ---------------- Procreate-style sliders: ↕ candle height, ↔ candle width ----------------
+var SL={busy:false}, VZ=1;
+function candAuto(orig){ var r=orig(); if(!r||!r.priceRange||VZ===1) return r; var a=r.priceRange.minValue,b=r.priceRange.maxValue,c=(a+b)/2,h=Math.max(1e-9,(b-a)/2)*VZ; return {priceRange:{minValue:c-h,maxValue:c+h},margins:r.margins}; }
+function ovAuto(orig){ return VZ===1?orig():null; }
+function vzApply(){ if(!cSeries) return; try{ chart.priceScale('right').applyOptions({autoScale:true}); cSeries.applyOptions({autoscaleInfoProvider:candAuto}); }catch(e){} }
 function slSide(){ var v=S.sliders||'left'; ['slZoom','slPan'].forEach(function(id){ var e=$(id); e.style.display=v==='off'?'none':''; e.classList.toggle('left',v!=='right'); e.classList.toggle('right',v==='right'); });
-  $('slPan').style.left=v==='right'?'14px':'44px'; $('slPan').style.right=v==='right'?'104px':'66px'; }
-function slMetrics(){ var r=chart&&chart.timeScale().getVisibleLogicalRange(); if(!r||!D) return null; var n=D.n, w=r.to-r.from, minB=12, maxB=Math.max(minB+1,n*1.05);
-  return {r:r,n:n,w:w,minB:minB,maxB:maxB,minR:Math.min(w-1,n-1),maxR:n+3}; }
-function slZoomVal(m){ return 1-Math.log(Math.max(m.minB,Math.min(m.maxB,m.w))/m.minB)/Math.log(m.maxB/m.minB); }
-function slPanVal(m){ return m.maxR<=m.minR?1:Math.max(0,Math.min(1,(m.r.to-m.minR)/(m.maxR-m.minR))); }
-function slPaint(){ var m=slMetrics(); if(!m) return; var z=$('slZoom'), p=$('slPan'), kz=z.querySelector('.kn'), kp=p.querySelector('.kn');
-  kz.style.top=((1-slZoomVal(m))*(z.clientHeight-30))+'px'; kp.style.left=(slPanVal(m)*(p.clientWidth-44))+'px'; }
+  $('slPan').style.left=v==='right'?'14px':'44px'; $('slPan').style.right=v==='right'?'150px':'110px'; }
+function slMetrics(){ var r=chart&&chart.timeScale().getVisibleLogicalRange(); if(!r||!D) return null; var n=D.n, w=r.to-r.from, minB=10, maxB=Math.max(minB+1,n*1.05); return {r:r,n:n,w:w,minB:minB,maxB:maxB}; }
+function slWidthVal(m){ return 1-Math.log(Math.max(m.minB,Math.min(m.maxB,m.w))/m.minB)/Math.log(m.maxB/m.minB); }
+function slHeightVal(){ return Math.max(0,Math.min(1,0.5-Math.log(VZ)/Math.log(4)/2)); }
+function slPaint(){ var z=$('slZoom'), p=$('slPan'); if(!z||!p) return; z.querySelector('.kn').style.top=((1-slHeightVal())*(z.clientHeight-30))+'px';
+  var m=slMetrics(); if(m) p.querySelector('.kn').style.left=(slWidthVal(m)*(p.clientWidth-44))+'px'; }
 function slTip(el,txt){ el.querySelector('.tip').textContent=txt; }
-function slDrag(id,horiz,apply){
-  var e=$(id), st=null;
-  e.addEventListener('pointerdown',function(ev){ ev.preventDefault(); ev.stopPropagation(); var m=slMetrics(); if(!m) return; e.setPointerCapture(ev.pointerId); e.classList.add('act');
-    st={x:ev.clientX,y:ev.clientY,m:m,v:horiz?slPanVal(m):slZoomVal(m)}; SL.busy=true; apply(st.v,st.m,true); });
+function slDrag(id,horiz,start,apply){
+  var e=$(id), st=null, lastTap=0;
+  e.addEventListener('pointerdown',function(ev){ ev.preventDefault(); ev.stopPropagation(); var m=slMetrics(); if(!m) return; try{ e.setPointerCapture(ev.pointerId); }catch(x){} e.classList.add('act');
+    st={x:ev.clientX,y:ev.clientY,m:m,v:start(m),moved:false}; SL.busy=true; apply(st.v,st.m); });
   e.addEventListener('pointermove',function(ev){ if(!st) return; ev.preventDefault(); var len=horiz?e.clientWidth-44:e.clientHeight-30, d=horiz?(ev.clientX-st.x):(st.y-ev.clientY);
-    apply(Math.max(0,Math.min(1,st.v+d/Math.max(40,len))),st.m,false); });
-  var end=function(){ if(!st) return; st=null; SL.busy=false; e.classList.remove('act'); slPaint(); };
+    if(Math.abs(d)>3) st.moved=true; apply(Math.max(0,Math.min(1,st.v+d/Math.max(40,len))),st.m); });
+  var end=function(){ if(!st) return; var tap=!st.moved; st=null; SL.busy=false; e.classList.remove('act');
+    if(tap){ var now=Date.now(); if(now-lastTap<350) e.dispatchEvent(new Event('reset')); lastTap=now; } slPaint(); };
   e.addEventListener('pointerup',end); e.addEventListener('pointercancel',end);
 }
-slDrag('slZoom',false,function(v,m){ var bars=m.minB*Math.pow(m.maxB/m.minB,1-v), right=Math.min(m.r.to,m.n+3); chart.timeScale().setVisibleLogicalRange({from:right-bars,to:right});
-  slTip($('slZoom'),Math.round(bars)+' candles'); slPaint(); });
-slDrag('slPan',true,function(v,m){ var right=m.minR+v*(m.maxR-m.minR), w=m.w; chart.timeScale().setVisibleLogicalRange({from:right-w,to:right});
-  var li=Math.max(0,Math.min(D.n-1,Math.round(right-1))); slTip($('slPan'),dmy(D.t[li])+(S.tf==='1d'?'':' '+hhmm(D.t[li]))); slPaint(); });
+// ↕ vertical: taller / shorter candles (price zoom). Up = taller.
+slDrag('slZoom',false,function(){ return slHeightVal(); },function(v){ VZ=Math.pow(4,1-2*v); vzApply(); slTip($('slZoom'),'Height ×'+(1/VZ).toFixed(2)); slPaint(); });
+$('slZoom').addEventListener('reset',function(){ VZ=1; vzApply(); slPaint(); toast('Candle height reset',1200); });
+// ↔ horizontal: wide / narrow view (time zoom), like a two-finger pinch. Right = wider candles.
+slDrag('slPan',true,function(m){ return slWidthVal(m); },function(v,m){ var bars=m.minB*Math.pow(m.maxB/m.minB,1-v), live=m.r.to>=m.n-2;
+  var c=live?null:(m.r.from+m.r.to)/2, from=live?m.r.to-bars:c-bars/2, to=live?m.r.to:c+bars/2; chart.timeScale().setVisibleLogicalRange({from:from,to:to});
+  slTip($('slPan'),Math.round(bars)+' candles'); slPaint(); });
+$('slPan').addEventListener('reset',function(){ $('zFit').click(); });
 $('setSl').value=S.sliders||'left'; $('setSl').onchange=function(){ S.sliders=this.value; save(); slSide(); slPaint(); };
 slSide();
-Object.keys(TF).forEach(function(tf){ var b=el('button',{class:'btn sm'+(tf===S.tf?' on':'')},tf); b.onclick=function(){ S.tf=tf; save(); mtfUI(); Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); }); loadAll(); }; $('tfBtns').appendChild(b); });
+Object.keys(TF).forEach(function(tf){ var b=el('button',{class:'btn sm'+(tf===S.tf?' on':'')},tf); b.onclick=function(){ S.tf=tf; save(); mtfUI(); $('tfSel').value=tf; Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); }); loadAll(); }; $('tfBtns').appendChild(b); });
 
 // ---------------- sheet ----------------
 function openSheet(title,bodyFn,footBtns){
