@@ -566,7 +566,7 @@ function andAll(D,list){
 
 // ---- base candle patterns ----
 var PATTERNS={
-  none:{name:'None — indicator conditions only'},
+  none:{name:'Indicators only (no candle pattern)'},
   opcr:{name:'Open ≈ prev close reversal (your pattern)'},
   opcr_flip:{name:'Open ≈ prev close — continuation (flipped)'},
   engulf:{name:'Engulfing candle'},
@@ -1286,6 +1286,9 @@ function operandEditor(op,onChange){
     if(op.k==='price'){ var f=el('select'); ['close','open','high','low','hl2','hlc3'].forEach(function(s){ f.appendChild(el('option',{value:s},s)); }); f.value=op.f||'close'; f.onchange=function(){ op.f=f.value; onChange(); }; box.appendChild(f); }
     if(op.k==='num'){ var v=el('input',{type:'number',step:'any',value:op.v,style:'width:90px'}); v.oninput=function(){ op.v=parseFloat(v.value)||0; onChange(); }; box.appendChild(v); }
     if(op.k==='ind'){
+      if((S.inds||[]).length){ var qp=el('select'); qp.appendChild(el('option',{value:''},'My chart…'));
+        S.inds.forEach(function(ind,k){ if(IND[ind.t]&&!IND[ind.t].noCond) qp.appendChild(el('option',{value:k},IND[ind.t].label(ind.p||{}))); });
+        qp.onchange=function(){ if(qp.value==='') return; var ind=S.inds[+qp.value]; op.t=ind.t; op.p=JSON.parse(JSON.stringify(ind.p||{})); op.o=IND[ind.t].outs[0]; draw(); onChange(); }; box.appendChild(qp); }
       var t=el('select'); Object.keys(IND).forEach(function(k){ if(!IND[k].noCond) t.appendChild(el('option',{value:k},IND[k].name)); }); t.value=op.t;
       t.onchange=function(){ op.t=t.value; op.p=defParams(op.t); op.o=IND[op.t].outs[0]; draw(); onChange(); }; box.appendChild(t);
       IND[op.t].params.forEach(function(x){
@@ -1297,6 +1300,43 @@ function operandEditor(op,onChange){
   }
   draw(); return box;
 }
+function chartIndCond(ind,L){
+  var d=IND[ind.t], p=JSON.parse(JSON.stringify(ind.p||{})), A={k:'ind',t:ind.t,p:p,o:d.outs[0]};
+  if(ind.t==='ST'||ind.t==='DTREND'){ A.o='dir'; return {a:A,op:L?'>':'<',b:{k:'num',v:0}}; }
+  if(ind.t==='CP'){ A.o=L?'bull':'bear'; return {a:A,op:'>',b:{k:'num',v:0}}; }
+  if(!d.pane){ if(ind.t==='BB'||ind.t==='KC'||ind.t==='DC') A.o='mid'; if(ind.t==='PDHL') A.o=L?'pdh':'pdl'; if(ind.t==='ORB') A.o=L?'high':'low'; if(ind.t==='PIV') A.o='p'; if(ind.t==='FIBD'||ind.t==='FIBW') A.o='f50';
+    return {a:{k:'price',f:'close'},op:L?'>':'<',b:A}; }
+  var mid={RSI:50,MFI:50,STOCH:50,SRSI:50,WR:-50,ADX:25}[ind.t]; if(mid==null) mid=0;
+  if(ind.t==='ADX') return {a:A,op:'>',b:{k:'num',v:25}};
+  if(ind.t==='ATR') return {a:A,op:'>',b:{k:'num',v:0}};
+  return {a:A,op:L?'>':'<',b:{k:'num',v:mid}};
+}
+var I_=function(t,p,o){ return {k:'ind',t:t,p:p,o:o}; }, PX={k:'price',f:'close'}, N_=function(v){ return {k:'num',v:v}; };
+var TEMPLATES2=[
+  ['Daily trend up','Daily trend down',function(L){ return {a:I_('DTREND',{len:20},'dir'),op:L?'>':'<',b:N_(0)}; }],
+  ['Price above 200 EMA','Price below 200 EMA',function(L){ return {a:PX,op:L?'>':'<',b:I_('EMA',{len:200,src:'close'},'value')}; }],
+  ['Price above 50 SMA','Price below 50 SMA',function(L){ return {a:PX,op:L?'>':'<',b:I_('SMA',{len:50,src:'close'},'value')}; }],
+  ['Price above Hull MA 21','Price below Hull MA 21',function(L){ return {a:PX,op:L?'>':'<',b:I_('HMA',{len:21,src:'close'},'value')}; }],
+  ['Price above VWMA 20','Price below VWMA 20',function(L){ return {a:PX,op:L?'>':'<',b:I_('VWMA',{len:20},'value')}; }],
+  ['Price above Parabolic SAR','Price below Parabolic SAR',function(L){ return {a:PX,op:L?'>':'<',b:I_('PSAR',{start:0.02,inc:0.02,max:0.2},'value')}; }],
+  ['ADX above 25 (trending)','ADX above 25 (trending)',function(L){ return {a:I_('ADX',{len:14},'adx'),op:'>',b:N_(25)}; }],
+  ['DI+ above DI−','DI− above DI+',function(L){ return {a:I_('ADX',{len:14},'pdi'),op:L?'>':'<',b:I_('ADX',{len:14},'mdi')}; }],
+  ['MACD above 0','MACD below 0',function(L){ return {a:I_('MACD',{fast:12,slow:26,sig:9},'macd'),op:L?'>':'<',b:N_(0)}; }],
+  ['Stochastic %K above %D','Stochastic %K below %D',function(L){ return {a:I_('STOCH',{len:14,sm:3,d:3},'k'),op:L?'>':'<',b:I_('STOCH',{len:14,sm:3,d:3},'d')}; }],
+  ['Stochastic oversold (<20)','Stochastic overbought (>80)',function(L){ return {a:I_('STOCH',{len:14,sm:3,d:3},'k'),op:L?'<':'>',b:N_(L?20:80)}; }],
+  ['Stoch RSI %K above %D','Stoch RSI %K below %D',function(L){ return {a:I_('SRSI',{rsi:14,len:14,sm:3,d:3},'k'),op:L?'>':'<',b:I_('SRSI',{rsi:14,len:14,sm:3,d:3},'d')}; }],
+  ['CCI above 0','CCI below 0',function(L){ return {a:I_('CCI',{len:20},'value'),op:L?'>':'<',b:N_(0)}; }],
+  ['CCI below −100 (oversold)','CCI above +100 (overbought)',function(L){ return {a:I_('CCI',{len:20},'value'),op:L?'<':'>',b:N_(L?-100:100)}; }],
+  ['Williams %R below −80','Williams %R above −20',function(L){ return {a:I_('WR',{len:14},'value'),op:L?'<':'>',b:N_(L?-80:-20)}; }],
+  ['MFI below 20','MFI above 80',function(L){ return {a:I_('MFI',{len:14},'value'),op:L?'<':'>',b:N_(L?20:80)}; }],
+  ['Price above Keltner upper','Price below Keltner lower',function(L){ return {a:PX,op:L?'>':'<',b:I_('KC',{len:20,mult:2},L?'upper':'lower')}; }],
+  ['Price above BB middle','Price below BB middle',function(L){ return {a:PX,op:L?'>':'<',b:I_('BB',{len:20,mult:2},'mid')}; }],
+  ['Price above daily pivot','Price below daily pivot',function(L){ return {a:PX,op:L?'>':'<',b:I_('PIV',{lv:2},'p')}; }],
+  ['Price above CPR top','Price below CPR bottom',function(L){ return {a:PX,op:L?'>':'<',b:I_('PIV',{lv:2},L?'tc':'bc')}; }],
+  ['Price above prev-day fib 50%','Price below prev-day fib 50%',function(L){ return {a:PX,op:L?'>':'<',b:I_('FIBD',{trend:20},'f50')}; }],
+  ['Bullish candle pattern','Bearish candle pattern',function(L){ return {a:I_('CP',{},L?'bull':'bear'),op:'>',b:N_(0)}; }],
+  ['RSI crosses above 30','RSI crosses below 70',function(L){ return {a:I_('RSI',{len:14},'value'),op:L?'xa':'xb',b:N_(L?30:70)}; }]
+];
 var TEMPLATES=[
   ['Price above EMA', function(L){ return {a:{k:'price',f:'close'},op:L?'>':'<',b:{k:'ind',t:'EMA',p:{len:20,src:'close'},o:'value'}}; }],
   ['Price above VWAP', function(L){ return {a:{k:'price',f:'close'},op:L?'>':'<',b:{k:'ind',t:'VWAP',p:{},o:'value'}}; }],
@@ -1322,11 +1362,18 @@ function condListEditor(s,side,box){
   var tm=el('div',{class:'tmpl'});
   TEMPLATES.forEach(function(T){ var b=el('button',{class:'btn sm'},'+ '+T[0].replace('above',isL?'above':'below').replace('green',isL?'green':'red').replace('oversold (<30)',isL?'oversold (<30)':'overbought (>70)').replace('crosses EMA',isL?'crosses above EMA':'crosses below EMA').replace('below BB lower',isL?'below BB lower':'above BB upper').replace('prev-day high',isL?'prev-day high':'prev-day low').replace('ORB high',isL?'ORB high':'ORB low')); b.onclick=function(){ list.push(T[1](isL)); condListEditor(s,side,box); }; tm.appendChild(b); });
   var cu=el('button',{class:'btn sm pri'},'+ Custom condition'); cu.onclick=function(){ condBuilder(s,side,box,null,-1); }; tm.appendChild(cu);
+  var more=el('details',{style:'width:100%;margin-top:4px'}); more.appendChild(el('summary',{class:'small'},'More indicators ('+TEMPLATES2.length+')'));
+  var mm=el('div',{class:'tmpl'}); TEMPLATES2.forEach(function(T){ var b=el('button',{class:'btn sm'},'+ '+(isL?T[0]:T[1])); b.onclick=function(){ list.push(T[2](isL)); condListEditor(s,side,box); }; mm.appendChild(b); });
+  more.appendChild(mm);
+  if((S.inds||[]).length){ var ch=el('details',{style:'width:100%;margin-top:4px'}); ch.appendChild(el('summary',{class:'small'},'Use an indicator from my chart'));
+    var cc=el('div',{class:'tmpl'}); S.inds.forEach(function(ind){ var d=IND[ind.t]; if(!d||d.noCond) return; var b=el('button',{class:'btn sm'},'+ '+d.label(ind.p||{})); b.onclick=function(){ condBuilder(s,side,box,null,-1,chartIndCond(ind,isL)); }; cc.appendChild(b); });
+    ch.appendChild(cc); tm.appendChild(ch); }
+  tm.appendChild(more);
   if(!isL){ var mi=el('button',{class:'btn sm'},'⇅ Mirror from CALL rules'); mi.onclick=function(){ s.short=s.long.map(mirrorCond); condListEditor(s,'short',box); }; tm.appendChild(mi); }
   box.appendChild(tm);
 }
-function condBuilder(s,side,box,c,idx){
-  var cond=c?JSON.parse(JSON.stringify(c)):{a:{k:'price',f:'close'},op:'>',b:{k:'ind',t:'EMA',p:{len:20,src:'close'},o:'value'}};
+function condBuilder(s,side,box,c,idx,preset){
+  var cond=c?JSON.parse(JSON.stringify(c)):preset?JSON.parse(JSON.stringify(preset)):{a:{k:'price',f:'close'},op:'>',b:{k:'ind',t:'EMA',p:{len:20,src:'close'},o:'value'}};
   var w=el('div',{class:'opEd'}); var prev=el('div',{class:'small',style:'margin-bottom:6px;color:#fff'});
   function up(){ prev.textContent=condLabel(cond); }
   w.appendChild(prev);
