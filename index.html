@@ -1276,6 +1276,7 @@ function condBuilder(s,side,box,c,idx){
   box.innerHTML=''; box.appendChild(w);
 }
 function field(label,input){ var w=el('label',{class:'lbl'},label); w.appendChild(input); return w; }
+function slVis(s,fv,fb,tv){ var uses=['pts','pct','atr'].indexOf(s.sl.type)>=0; fv.style.display=uses?'':'none'; fb.style.display=uses?'none':''; if(tv) tv.style.display=s.tp.type==='none'?'none':''; }
 function sel(opts,val,fn){ var s=el('select'); opts.forEach(function(o){ s.appendChild(el('option',{value:o[0]},o[1])); }); s.value=val; s.onchange=function(){ fn(s.value); }; return s; }
 function num(val,fn,step){ var i=el('input',{type:'number',step:step||'any',value:val}); i.oninput=function(){ var v=parseFloat(i.value); fn(isNaN(v)?0:v); }; return i; }
 function editStrategy(orig,isNew){
@@ -1310,13 +1311,13 @@ function editStrategy(orig,isNew){
     var sb=el('div'); body.appendChild(sb); condListEditor(s,'short',sb);
     body.appendChild(el('h4',null,'4 · Stop loss & target'));
     var r5=el('div',{class:'row'});
-    r5.appendChild(field('Stop loss',sel([['pattern','Beyond both pattern candles'],['candle','Beyond signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR(14) multiple']],s.sl.type,function(v){s.sl.type=v;})));
-    r5.appendChild(field('SL value (pts / % / ×ATR)',num(s.sl.v||'',function(v){s.sl.v=v;})));
-    r5.appendChild(field('Buffer beyond candle (pts)',num(s.sl.buf||0,function(v){s.sl.buf=v;})));
+    var fv5=field('SL value (pts / % / ×ATR)',num(s.sl.v||'',function(v){s.sl.v=v;})), fb5=field('Buffer beyond candle (pts)',num(s.sl.buf||0,function(v){s.sl.buf=v;})), tv6;
+    r5.appendChild(field('Stop loss',sel([['pattern','Beyond both pattern candles'],['candle','Beyond signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR(14) multiple']],s.sl.type,function(v){s.sl.type=v; slVis(s,fv5,fb5,tv6);})));
+    r5.appendChild(fv5); r5.appendChild(fb5);
     body.appendChild(r5);
     var r6=el('div',{class:'row',style:'margin-top:6px'});
-    r6.appendChild(field('Target',sel([['R','R multiple (× stop distance)'],['pts','Fixed points'],['pct','Fixed %'],['none','None (stop / time exit)']],s.tp.type,function(v){s.tp.type=v;})));
-    r6.appendChild(field('Target value',num(s.tp.v,function(v){s.tp.v=v;})));
+    r6.appendChild(field('Target',sel([['R','R multiple (× stop distance)'],['pts','Fixed points'],['pct','Fixed %'],['none','None (stop / time exit)']],s.tp.type,function(v){s.tp.type=v; slVis(s,fv5,fb5,tv6);})));
+    tv6=field('Target value',num(s.tp.v,function(v){s.tp.v=v;})); r6.appendChild(tv6); slVis(s,fv5,fb5,tv6);
     body.appendChild(r6);
     body.appendChild(el('h4',null,'5 · Time & daily rules'));
     var r7=el('div',{class:'row'});
@@ -1453,6 +1454,96 @@ function runBt(){
 }
 $('btRun').onclick=runBt; $('btRun2').onclick=runBt;
 var btWork=null, btDirty=false, btTimer=null;
+var optStop=false;
+function optSpace(base,tf){
+  var P=[], pat=base.pattern||'none';
+  var setp=function(k){ return function(s,v){ s.pat=s.pat||{}; s.pat[k]=v; }; };
+  if(pat==='opcr'||pat==='opcr_flip'){
+    P.push({n:'Max gap %',vals:[0.5,1,1.5,2,3,5,10],set:setp('gapPct')});
+    P.push({n:'Size ≥ ×',vals:[0.2,0.4,0.6,0.8,1],set:setp('rMin')});
+    P.push({n:'Size ≤ ×',vals:[1,1.2,1.5,2,3],set:setp('rMax')});
+    P.push({n:'Min body %',vals:[0.02,0.05,0.1,0.15,0.2,0.3],set:setp('minBodyPct')});
+  }
+  if(pat==='orb_break') P.push({n:'ORB minutes',vals:[5,15,30,60],set:setp('orbMins')});
+  var SL=[['pattern',0,0],['pattern',0,2],['pattern',0,5],['pattern',0,10],['candle',0,0],['candle',0,2],['candle',0,5],['pct',0.15,0],['pct',0.25,0],['pct',0.4,0],['pct',0.6,0],['atr',1,0],['atr',1.5,0],['atr',2,0]];
+  var TP=[['R',0.5],['R',0.75],['R',1],['R',1.25],['R',1.5],['R',2],['R',2.5],['R',3],['pct',0.2],['pct',0.35],['pct',0.5],['pct',0.75],['pct',1],['none',0]];
+  var ST=[]; SL.forEach(function(a){ TP.forEach(function(b){ ST.push([a,b]); }); });
+  P.push({n:'Stop loss + target',vals:ST,set:function(s,v){ s.sl={type:v[0][0],v:v[0][1],buf:v[0][2]}; s.tp={type:v[1][0],v:v[1][1]}; }});
+  if(tf!=='1d'){
+    P.push({n:'From',vals:['09:15','09:20','09:30','09:45','10:00','10:30','11:00'],set:function(s,v){ s.start=v; }});
+    P.push({n:'Until',vals:['10:30','11:30','12:30','13:30','14:30','15:00'],set:function(s,v){ s.end=v; }});
+    P.push({n:'Max trades/day',vals:[0,1,2,3],set:function(s,v){ s.maxTrades=v; }});
+    P.push({n:'Stop after a win',vals:[true,false],set:function(s,v){ s.stopAfterWin=v; }});
+  }
+  return P;
+}
+function optDesc(s,tf){
+  var p=s.pat||{}, pat=s.pattern||'none', out=[];
+  if(pat==='opcr'||pat==='opcr_flip') out.push('Max gap '+(p.gapPct!=null?p.gapPct:10)+'% · size '+(p.rMin!=null?p.rMin:1)+'–'+(p.rMax!=null?p.rMax:1.3)+'× · min body '+(p.minBodyPct!=null?p.minBodyPct:0.02)+'%');
+  if(pat==='orb_break') out.push('ORB '+(p.orbMins||15)+' min');
+  var sl=s.sl||{}, tp=s.tp||{};
+  out.push('SL: '+({pattern:'pattern candles',candle:'signal candle',pts:sl.v+' pts',pct:sl.v+'%',atr:sl.v+'× ATR'})[sl.type||'pattern']+((sl.type==='pattern'||sl.type==='candle'||!sl.type)?' + '+(sl.buf||0)+' pts':'')+
+    ' · Target: '+({R:tp.v+' R',pts:tp.v+' pts',pct:tp.v+'%',none:'none (stop / time exit)'})[tp.type||'R']);
+  if(tf!=='1d') out.push((s.start||'09:20')+'–'+(s.end||'15:00')+' · max '+(+s.maxTrades?s.maxTrades:'∞')+' trades/day'+(s.stopAfterWin?' · stop after a win':''));
+  return out.join('<br>');
+}
+function btOptimize(){
+  var base=btWork||S.strats.find(function(x){return x.id===$('btStrat').value;}); if(!base){ toast('Pick a strategy first',2500); return; }
+  var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut'), cfg=btCfg(), obj=S.optObj||'net';
+  cfg.comp=false; var money=cfg.inst!=='pts';
+  optStop=false; out.innerHTML='<div class="card">Loading data…</div>';
+  getBtData(sym,tf,days,btProg(out,'Optimizer')).then(function(Dx){
+    var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
+    var cut=btCut(Dx,days), t0=Dx.t[cut.i], t1=Dx.t[lc], split=Math.floor(t0+(t1-t0)*0.7), MD=30.44*86400;
+    var mA=Math.max(1,(split-t0)/MD), mB=Math.max(1,(t1-split)/MD);
+    function part(T,mons){ var r={n:T.length,w:0,net:0,gp:0,gl:0,mon:{}};
+      T.forEach(function(t){ var v=money?t.rs:t.pts; r.net+=v; if(v>0){ r.w++; r.gp+=v; } else r.gl-=v; var d=new Date(t.t*1000), k=d.getUTCFullYear()*12+d.getUTCMonth(); r.mon[k]=(r.mon[k]||0)+v; });
+      var g=0; for(var k in r.mon) if(r.mon[k]>0) g++;
+      r.months=mons; r.perMon=r.net/mons; r.winsMon=r.w/mons; r.tradesMon=r.n/mons; r.win=r.n?100*r.w/r.n:0; r.pf=r.gl>0?r.gp/r.gl:(r.gp>0?99:0); r.green=100*g/Math.max(1,Math.round(mons)); return r; }
+    function ev(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=t0 && t.why!=='Open'; });
+      if(money) rupeeTrades(tr,cfg);
+      return {A:part(tr.filter(function(t){ return t.t<split; }),mA),B:part(tr.filter(function(t){ return t.t>=split; }),mB),F:part(tr,mA+mB)}; }
+    function score(r){ var a=r.A; if(a.n<Math.max(12,mA*0.5) || a.net<=0) return -1e15+a.net;
+      return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : a.perMon; }
+    var sides=[['long','CALL'],['short','PUT']], res={}, si=0, runs=0, P=optSpace(base,tf), pass=0, pi=0, vi=0, cur, curR, curS;
+    function startSide(){ cur=JSON.parse(JSON.stringify(base)); cur.dir=sides[si][0]; cur.name=base.name+' · '+sides[si][1]+' best'; curR=ev(cur); curS=score(curR); runs++; pass=0; pi=0; vi=0; }
+    startSide();
+    function draw(){ out.innerHTML='<div class="card">🔍 Searching best <b>'+sides[si][1]+'</b> settings… round '+(pass+1)+'/2 · '+P[pi].n+' · '+runs+' combinations tested'+
+      '<div class="hint">Learns on the first 70% of the period, then checks the last 30% it never saw.</div><button class="btn sm" id="optStopB" style="margin-top:6px">Stop</button></div>'; $('optStopB').onclick=function(){ optStop=true; }; }
+    draw();
+    function step(){
+      var tEnd=performance.now()+120;
+      while(performance.now()<tEnd){
+        if(optStop) return finish();
+        var p=P[pi]; var c=JSON.parse(JSON.stringify(cur)); p.set(c,p.vals[vi]); var r=ev(c), sc=score(r); runs++;
+        if(sc>curS){ cur=c; curR=r; curS=sc; }
+        vi++; if(vi>=p.vals.length){ vi=0; pi++; if(pi>=P.length){ pi=0; pass++; if(pass>=2){ res[sides[si][0]]={s:cur,r:curR,ok:curS>-1e14}; si++; if(si>=sides.length) return finish(); startSide(); } } }
+      }
+      draw(); setTimeout(step,0);
+    }
+    function finish(){
+      if(optStop && !res.long){ out.innerHTML='<div class="card">Stopped.</div>'; return; }
+      if(optStop && cur && !res[sides[si]&&sides[si][0]]) res[sides[si][0]]={s:cur,r:curR,ok:curS>-1e14,partial:true};
+      var R=function(x){ return money?'₹'+Math.round(x).toLocaleString('en-IN'):fmt(x,1)+' pts'; };
+      var row=function(l,x){ return '<tr><td>'+l+'</td><td>'+fmt(x.tradesMon,1)+'</td><td>'+fmt(x.winsMon,1)+'</td><td>'+fmt(x.win,0)+'%</td><td>'+fmt(x.pf)+'</td><td class="'+(x.perMon>=0?'up':'dn')+'">'+R(x.perMon)+'</td><td>'+fmt(x.green,0)+'%</td></tr>'; };
+      var h='<div class="card" data-k="opt"><h3 class="chd">🔍 Best settings · '+symName(sym)+' '+tf+' · '+({net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+'</h3>'+
+        '<div class="small mut">'+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
+      ['long','short'].forEach(function(k){ var x=res[k]; if(!x) return; var nm=k==='long'?'CALL':'PUT';
+        h+='<h4 class="'+(k==='long'?'up':'dn')+'" style="margin-top:12px">'+nm+(x.partial?' (stopped early)':'')+'</h4>';
+        if(!x.ok) h+='<p class="hint dn">No profitable '+nm+' setting found for this pattern + filters.</p>';
+        h+='<p class="hint" style="margin:0 0 6px">'+optDesc(x.s,tf)+'</p><div style="overflow:auto"><table><tr><th></th><th>Trades/mo</th><th>Wins/mo</th><th>Win%</th><th>PF</th><th>Net/mo</th><th>Green months</th></tr>'+
+          row('Learn (70%)',x.r.A)+row('<b>Check (30%)</b>',x.r.B)+row('All',x.r.F)+'</table></div>'+
+          '<div class="row" style="margin-top:6px"><button class="btn sm pri" data-use="'+k+'">Load into quick edit</button><button class="btn sm" data-save="'+k+'">Save as new strategy</button></div>'; });
+      h+='<p class="hint" style="margin-top:8px">Trust a setting only if the <b>Check</b> row (data it never learned on) is still positive. Big drop from Learn → Check = over-fitted.</p></div>';
+      out.innerHTML=h; btCollapse(out);
+      Array.prototype.forEach.call(out.querySelectorAll('[data-use]'),function(b){ b.onclick=function(){ var x=res[b.getAttribute('data-use')]; btWork=JSON.parse(JSON.stringify(x.s)); btWork.id=base.id; btWork.name=base.name; btDirty=true; btQuick(); runBt(); }; });
+      Array.prototype.forEach.call(out.querySelectorAll('[data-save]'),function(b){ b.onclick=function(){ var x=res[b.getAttribute('data-save')]; var c=JSON.parse(JSON.stringify(x.s)); c.id=uid(); c.onChart=false; S.strats.push(c); save(); fillBtStrat(); toast('Saved “'+c.name+'”',2500); b.disabled=true; }; });
+      var bx=res.long&&res.long.r.F, by=res.short&&res.short.r.F;
+      $('btBarTxt').innerHTML='<div><span class="big">Best found</span> <span class="sub">'+symName(sym)+' '+tf+'</span></div><div class="sub">'+(bx?'CALL '+R(bx.perMon)+'/mo · '+fmt(bx.winsMon,1)+' wins/mo':'')+(by?' · PUT '+R(by.perMon)+'/mo · '+fmt(by.winsMon,1)+' wins/mo':'')+'</div>';
+    }
+    setTimeout(step,30);
+  }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
+}
 function btQuick(){
   var box=$('btQuick'); box.innerHTML='';
   var orig=S.strats.find(function(x){return x.id===$('btStrat').value;}); if(!orig) return;
@@ -1472,13 +1563,13 @@ function btQuick(){
     d.appendChild(r2); }
   if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('ORB minutes',num(s.pat.orbMins||15,function(v){s.pat.orbMins=v;ch();}))); d.appendChild(r2b); }
   var r3=el('div',{class:'row',style:'margin-top:6px'});
-  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],s.sl.type||'pattern',function(v){s.sl.type=v;ch();})));
-  r3.appendChild(field('SL value',num(s.sl.v||'',function(v){s.sl.v=v;ch();})));
-  r3.appendChild(field('SL buffer pts',num(s.sl.buf||0,function(v){s.sl.buf=v;ch();})));
+  var fv3=field('SL value (pts / % / ×ATR)',num(s.sl.v||'',function(v){s.sl.v=v;ch();})), fb3=field('SL buffer beyond candles (pts)',num(s.sl.buf||0,function(v){s.sl.buf=v;ch();})), tv4;
+  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],s.sl.type||'pattern',function(v){s.sl.type=v; slVis(s,fv3,fb3,tv4); ch();})));
+  r3.appendChild(fv3); r3.appendChild(fb3);
   d.appendChild(r3);
   var r4=el('div',{class:'row',style:'margin-top:6px'});
-  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],s.tp.type||'R',function(v){s.tp.type=v;ch();})));
-  r4.appendChild(field('Target value',num(s.tp.v,function(v){s.tp.v=v;ch();})));
+  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],s.tp.type||'R',function(v){s.tp.type=v; slVis(s,fv3,fb3,tv4); ch();})));
+  tv4=field('Target value',num(s.tp.v,function(v){s.tp.v=v;ch();})); r4.appendChild(tv4); slVis(s,fv3,fb3,tv4);
   r4.appendChild(field('Max trades/day',num(s.maxTrades||0,function(v){s.maxTrades=v;ch();},1)));
   r4.appendChild(field('Day loss limit pts',num(s.maxLossDay||0,function(v){s.maxLossDay=v;ch();})));
   d.appendChild(r4);
@@ -1504,6 +1595,11 @@ function btQuick(){
     if(need){ var pr=loadAll(); if(pr&&pr.then) pr.then(go); else go(); } else go();
   };
   r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
+  var r7=el('div',{class:'row',style:'margin-top:8px;align-items:flex-end'});
+  var ob=sel([['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'net',function(v){ S.optObj=v; save(); });
+  r7.appendChild(field('Find best settings for',ob));
+  var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'🔍 Find best CALL & PUT settings'); bo.onclick=btOptimize; r7.appendChild(bo);
+  d.appendChild(r7);
   d.appendChild(el('p',{class:'hint'},'Changes re-run the backtest automatically. They only affect this test until you save.'));
   box.appendChild(d);
 }
