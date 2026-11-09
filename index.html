@@ -739,7 +739,7 @@ function rpEnter(){
   if(!bars.length||RP.on) return;
   RP.on=true; RP.full=bars.slice(); RP.trades=[]; RP.pos=null; RP.marks=[]; RP.picking=true; rpStop(); lastAlertKey={};
   var n=RP.full.length, i=n-1;
-  if(S.tf!=='1d'){ var ld=dayKey(RP.full[n-1].time); while(i>0 && dayKey(RP.full[i].time)===ld) i--; var pd=dayKey(RP.full[i].time); while(i>0 && dayKey(RP.full[i-1].time)===pd) i--; }
+  if(S.tf!=='1d'){ var ld=dayKey(RP.full[n-1].time); while(i>0 && dayKey(RP.full[i].time)===ld) i--; for(var g=0;g<10;g++){ var pd=dayKey(RP.full[i].time), j=i, mv=0; while(j>0 && dayKey(RP.full[j-1].time)===pd) j--; for(var k=j;k<=i;k++) if(RP.full[k].high>RP.full[k].low) mv++; if(mv*2>=(i-j+1) || j===0){ i=j; break; } i=j-1; } }
   else i=Math.max(1,n-60);
   RP.idx=Math.max(1,i); rpUI();
   toast('Replay mode: tap any candle on the chart to start from there, or press ▶ to start from the previous day.',6000);
