@@ -1312,11 +1312,12 @@ function rsCard(rs,cfg){
     '<p class="hint" style="margin:8px 0 0">Charges: brokerage '+R(rs.chg.brok)+' · STT '+R(rs.chg.stt)+' · exchange '+R(rs.chg.tx)+' · stamp '+R(rs.chg.stamp)+' · GST '+R(rs.chg.gst)+' · SEBI '+R(rs.chg.sebi)+'.'+(cfg.inst==='opt'?' Option P&L is estimated as index points × delta (no time decay / IV change), so treat it as optimistic.':'')+'</p></div>';
 }
 var dataCache={};
+function btCut(Dx,days){ var c=Math.floor((nowIST()-days*86400)/86400)*86400, i=0; while(i<Dx.n-1&&Dx.t[i]<c) i++; return {c:c,i:i}; }
 function getBtData(sym,tf,days){
-  var key=sym+'|'+tf+'|'+days, c=dataCache[key];
+  var key=sym+'|'+tf, c=dataCache[key];
   if(c && Date.now()-c.at<5*60000) return Promise.resolve(c.D);
   var cb= tf==='1d'?5000:30000;
-  return fetchBars(sym,tf,{days:days,cb:cb}).then(function(b){ var Dx=cols(b); dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
+  return fetchBars(sym,tf,{days:tf==='1d'?7300:400,cb:cb}).then(function(b){ var Dx=cols(b); dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
 }
 function statCards(st){
   var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; };
@@ -1330,8 +1331,8 @@ function runBt(){
   getBtData(sym,tf,days).then(function(Dx){
     if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; }
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
-    var tr=backtest(Dx,s,TF[tf].min,cost,lc), st=btStats(tr), cfg=btCfg(), rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
-    var html='<div class="card"><h3>'+s.name+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[0])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade</div>'+statCards(st)+'</div>';
+    var cut=btCut(Dx,days), tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=btCfg(), rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
+    var html='<div class="card"><h3>'+s.name+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade</div>'+statCards(st)+'</div>';
     if(rs) html+=rsCard(rs,cfg);
     html+='<div class="card"><h4 style="margin-top:0">Equity curve ('+(rs?'₹ after charges':'points')+')</h4><div id="eq"></div></div>';
     // by month
@@ -1417,8 +1418,8 @@ $('btAll').onclick=function(){
   out.innerHTML='<div class="card">Running all strategies…</div>';
   getBtData(sym,tf,days).then(function(Dx){
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
-    var cfg=btCfg(); var rows=S.strats.map(function(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc), st=btStats(tr); var rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null; return {s:s,st:st,rs:rs}; }).sort(function(a,b){ return a.rs&&b.rs? b.rs.net-a.rs.net : b.st.net-a.st.net; });
-    out.innerHTML='<div class="card"><h3>All strategies · '+symName(sym)+' '+tf+'</h3><div class="small mut">'+dmy(Dx.t[0])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts</div><div style="overflow:auto;margin-top:6px"><table><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net pts</th><th>DD</th>'+(cfg.inst!=='pts'?'<th>₹ net</th><th>₹ charges</th>':'')+'</tr>'+rows.map(function(r){ return '<tr><td>'+r.s.name+'</td><td>'+r.st.n+'</td><td>'+fmt(r.st.win,0)+'</td><td class="'+(r.st.pf>=1?'up':'dn')+'">'+fmt(r.st.pf)+'</td><td class="'+(r.st.net>=0?'up':'dn')+'">'+fmt(r.st.net,0)+'</td><td>'+fmt(r.st.dd,0)+'</td>'+(r.rs?'<td class="'+(r.rs.net>=0?'up':'dn')+'">'+Math.round(r.rs.net).toLocaleString('en-IN')+'</td><td>'+Math.round(r.rs.chg.total).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
+    var cut=btCut(Dx,days), cfg=btCfg(); var rows=S.strats.map(function(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr); var rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null; return {s:s,st:st,rs:rs}; }).sort(function(a,b){ return a.rs&&b.rs? b.rs.net-a.rs.net : b.st.net-a.st.net; });
+    out.innerHTML='<div class="card"><h3>All strategies · '+symName(sym)+' '+tf+'</h3><div class="small mut">'+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts</div><div style="overflow:auto;margin-top:6px"><table><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net pts</th><th>DD</th>'+(cfg.inst!=='pts'?'<th>₹ net</th><th>₹ charges</th>':'')+'</tr>'+rows.map(function(r){ return '<tr><td>'+r.s.name+'</td><td>'+r.st.n+'</td><td>'+fmt(r.st.win,0)+'</td><td class="'+(r.st.pf>=1?'up':'dn')+'">'+fmt(r.st.pf)+'</td><td class="'+(r.st.net>=0?'up':'dn')+'">'+fmt(r.st.net,0)+'</td><td>'+fmt(r.st.dd,0)+'</td>'+(r.rs?'<td class="'+(r.rs.net>=0?'up':'dn')+'">'+Math.round(r.rs.net).toLocaleString('en-IN')+'</td><td>'+Math.round(r.rs.chg.total).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
   }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
 };
 
