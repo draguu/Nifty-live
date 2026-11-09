@@ -572,22 +572,23 @@ function patternArrs(D,s){
 
 // ---- signals ----
 // returns [{i, side, stop}] signal on CLOSE of bar i; entry at open of i+1
+function sideS(s,side){ var o=s.sides&&s.sides[side>0?'long':'short']; if(!o) return s; var c={}; for(var k in s) c[k]=s[k]; for(k in o) c[k]=o[k]; return c; }
 function strategySignals(D,s,tfMin){
-  var n=D.n, pat=patternArrs(D,s), LC=andAll(D,s.long), SC=andAll(D,s.short), out=[];
-  var intraday=tfMin<1440, st=hm2min(s.start||'09:15'), en=hm2min(s.end||'15:00');
+  var n=D.n, sL=sideS(s,1), sS=sideS(s,-1), pat=patternArrs(D,sL), patS=s.sides?patternArrs(D,sS):pat, LC=andAll(D,s.long), SC=andAll(D,s.short), out=[];
+  var intraday=tfMin<1440, stL=hm2min(sL.start||'09:15'), enL=hm2min(sL.end||'15:00'), stS=hm2min(sS.start||'09:15'), enS=hm2min(sS.end||'15:00');
   var atr=indCalc(D,'ATR',{len:14}).value, edge=(s.pattern==='none' && s.trigger!=='every');
   var prevL=false, prevS=false;
   for(var i=0;i<n;i++){
     var okL = pat.L[i] && LC[i] && (s.long&&s.long.length || s.pattern!=='none');
-    var okS = pat.S[i] && SC[i] && (s.short&&s.short.length || s.pattern!=='none');
+    var okS = patS.S[i] && SC[i] && (s.short&&s.short.length || s.pattern!=='none');
     var rawL=okL, rawS=okS;
     if(edge){ okL = okL && !prevL; okS = okS && !prevS; }
     prevL=rawL; prevS=rawS;
-    if(intraday){ var m=D.mod[i]+tfMin; if(m<st || m>en) { okL=okS=false; } }
+    if(intraday){ var m=D.mod[i]+tfMin; if(m<stL || m>enL) okL=false; if(m<stS || m>enS) okS=false; }
     if(s.dir==='long') okS=false; if(s.dir==='short') okL=false; if(s.dir==='none') okL=okS=false;
     if(!okL && !okS) continue;
     var side= okL?1:-1; if(okL&&okS) continue; // ambiguous
-    out.push({i:i,side:side,stop:stopFor(D,s,i,side,atr)});
+    out.push({i:i,side:side,stop:stopFor(D,side>0?sL:sS,i,side,atr)});
   }
   return out;
 }
@@ -612,20 +613,20 @@ function targetFor(s,entry,stop,side){
 }
 function backtest(D,s,tfMin,cost,lastClosedIdx){
   var sig=strategySignals(D,s,tfMin), trades=[], busy=-1, perDay={}, stopDay={}, dayPts={};
-  var intraday=tfMin<1440, sq=hm2min(s.sq||'15:15'), maxT=+(s.maxTrades||0), lim=lastClosedIdx==null?D.n-1:lastClosedIdx;
+  var intraday=tfMin<1440, lim=lastClosedIdx==null?D.n-1:lastClosedIdx, SS={'1':sideS(s,1),'-1':sideS(s,-1)};
   for(var a=0;a<sig.length;a++){
     var g=sig[a], k=g.i+1; if(g.i>lim-0 || k>lim) continue;
     if(intraday && D.day[k]!==D.day[g.i]) continue;
     if(k<=busy) continue;
-    var d=D.day[k];
+    var ss=SS[g.side], sq=hm2min(ss.sq||'15:15'), maxT=+(ss.maxTrades||0), d=D.day[k];
     if(stopDay[d]) continue; if(maxT>0 && (perDay[d]||0)>=maxT) continue;
     if(intraday && D.mod[k]>=sq) continue;
     var side=g.side, entry=D.o[k], stop=g.stop;
-    if((s.sl&&['pts','pct','atr'].indexOf(s.sl.type)>=0)){ var shift=entry-D.c[g.i]; stop+=shift; }
-    var tgt=targetFor(s,entry,stop,side), exit=null, why='', m;
+    if((ss.sl&&['pts','pct','atr'].indexOf(ss.sl.type)>=0)){ var shift=entry-D.c[g.i]; stop+=shift; }
+    var tgt=targetFor(ss,entry,stop,side), exit=null, why='', m, dd=D.day[k];
     if(side>0? entry<=stop : entry>=stop){ exit=entry; why='Gap'; m=k; }
     else for(m=k;m<=lim;m++){
-      if(intraday && D.day[m]!==d){ m--; exit=D.c[m]; why='EOD'; break; }
+      if(intraday && D.day[m]!==dd){ m--; exit=D.c[m]; why='EOD'; break; }
       if(side>0){ if(D.l[m]<=stop){ exit=Math.min(stop,D.o[m]); why='SL'; break; } if(!isNaN(tgt) && D.h[m]>=tgt){ exit=Math.max(tgt, m>k?D.o[m]:tgt); if(m===k) exit=tgt; why='TP'; break; } }
       else { if(D.h[m]>=stop){ exit=Math.max(stop,D.o[m]); why='SL'; break; } if(!isNaN(tgt) && D.l[m]<=tgt){ exit=Math.min(tgt, m>k?D.o[m]:tgt); if(m===k) exit=tgt; why='TP'; break; } }
       if(intraday && D.mod[m]+tfMin>=sq){ exit=D.c[m]; why='EOD'; break; }
@@ -634,7 +635,7 @@ function backtest(D,s,tfMin,cost,lastClosedIdx){
     var pts=(exit-entry)*side - (why==='Open'?0:cost);
     trades.push({t:D.t[k],te:D.t[Math.min(m,D.n-1)],side:side,entry:entry,stop:stop,tgt:tgt,exit:exit,why:why,pts:pts,sigI:g.i,exI:m,risk:Math.abs(entry-stop)});
     busy=m; perDay[d]=(perDay[d]||0)+1;
-    if(why!=='Open'){ dayPts[d]=(dayPts[d]||0)+pts; if(s.stopAfterWin && pts>0) stopDay[d]=true; if(+s.maxLossDay>0 && dayPts[d]<=-s.maxLossDay) stopDay[d]=true; }
+    if(why!=='Open'){ dayPts[d]=(dayPts[d]||0)+pts; if(ss.stopAfterWin && pts>0) stopDay[d]=true; if(+ss.maxLossDay>0 && dayPts[d]<=-ss.maxLossDay) stopDay[d]=true; }
   }
   return trades;
 }
@@ -1440,7 +1441,7 @@ function runBt(){
     var mon={}; tr.forEach(function(t){ if(t.why==='Open'||t.skip) return; var d=new Date(t.t*1000), k=d.getUTCFullYear()+'-'+two(d.getUTCMonth()+1); mon[k]=mon[k]||{n:0,p:0,w:0,r:0}; mon[k].n++; mon[k].p+=t.pts; mon[k].r+=(t.rs||0); if(t.pts>0) mon[k].w++; });
     html+='<div class="card" data-k="mon"><h4 class="chd" style="margin-top:0">By month</h4><div style="max-height:220px;overflow:auto"><table><tr><th>Month</th><th>Trades</th><th>Win%</th><th>Points</th>'+(rs?'<th>₹ net</th>':'')+'</tr>'+Object.keys(mon).sort().reverse().map(function(k){ var m=mon[k]; return '<tr><td>'+k+'</td><td>'+m.n+'</td><td>'+fmt(100*m.w/m.n,0)+'</td><td class="'+(m.p>=0?'up':'dn')+'">'+fmt(m.p,1)+'</td>'+(rs?'<td class="'+(m.r>=0?'up':'dn')+'">'+Math.round(m.r).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
     html+='<div class="card" data-k="trades"><div class="row chd"><h4 class="grow" style="margin:0">Trades ('+tr.length+')</h4><button class="btn sm" id="btShow">Show on chart</button></div><div style="max-height:360px;overflow:auto;margin-top:6px"><table><tr><th>Date</th><th>Side</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>Pts</th>'+(rs?(rs.comp?'<th>Lots</th>':'')+'<th>₹ net</th>'+(rs.comp?'<th>Capital</th>':''):'')+'</tr>'+tr.slice().reverse().map(function(t){ return '<tr><td>'+dmy(t.t)+' '+(tf==='1d'?'':hhmm(t.t))+'</td><td class="'+(t.side>0?'up':'dn')+'">'+(t.side>0?'CALL':'PUT')+'</td><td>'+fmt(t.entry,1)+'</td><td>'+fmt(t.stop,1)+'</td><td>'+fmt(t.tgt,1)+'</td><td>'+fmt(t.exit,1)+'</td><td>'+t.why+'</td><td class="'+(t.pts>=0?'up':'dn')+'">'+fmt(t.pts,1)+'</td>'+(rs?(rs.comp?'<td>'+(t.skip?'–':t.lots)+'</td>':'')+'<td class="'+((t.rs||0)>=0?'up':'dn')+'">'+(t.skip?'skipped':Math.round(t.rs||0).toLocaleString('en-IN'))+'</td>'+(rs.comp?'<td>'+(t.cap!=null&&!t.skip?Math.round(t.cap).toLocaleString('en-IN'):'–')+'</td>':''):'')+'</tr>'; }).join('')+'</table></div></div>';
-    out.innerHTML=html; btCollapse(out); btBarSet(st,rs,s.name+' · '+symName(sym)+' '+tf+sideTag());
+    out.innerHTML=html; btCollapse(out); if(btAfter){ var fa=btAfter; btAfter=null; fa(); } btBarSet(st,rs,s.name+' · '+symName(sym)+' '+tf+sideTag());
     // equity chart
     if(eqChart){ try{eqChart.remove();}catch(e){} }
     eqChart=LC.createChart($('eq'),{autoSize:true,layout:{background:{type:'solid',color:'#161a21'},textColor:'#aab2c3',fontSize:10},grid:{vertLines:{visible:false},horzLines:{color:'#232834'}},timeScale:{timeVisible:false,borderColor:'#2c3445'},rightPriceScale:{borderColor:'#2c3445'},handleScroll:true,handleScale:true});
@@ -1464,8 +1465,8 @@ function sideTag(){ return btOn.c&&btOn.p?'':' <span class="'+(btOn.c?'up':btOn.
 $('btOnC').onclick=function(){ btOn.c=!btOn.c; btSideUI(); runBt(); };
 $('btOnP').onclick=function(){ btOn.p=!btOn.p; btSideUI(); runBt(); };
 btSideUI();
-var btWork=null, btDirty=false, btTimer=null;
-var optStop=false;
+var btWork=null, btDirty=false, btTimer=null, btQSide='long';
+var optStop=false, btAfter=null;
 function optSpace(base,tf){
   var P=[], pat=base.pattern||'none';
   var setp=function(k){ return function(s,v){ s.pat=s.pat||{}; s.pat[k]=v; }; };
@@ -1500,24 +1501,30 @@ function optDesc(s,tf){
 }
 function btOptimize(){
   var base=btWork||S.strats.find(function(x){return x.id===$('btStrat').value;}); if(!base){ toast('Pick a strategy first',2500); return; }
-  var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut'), cfg=btCfg(), obj=S.optObj||'net';
+  var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut'), cfg=btCfg(), obj=S.optObj||'steady';
   cfg.comp=false; var money=cfg.inst!=='pts';
+  if(days<180){ toast('Pick a period of 6 months or more – too few trades to judge settings',4000); return; }
+  var orig=S.strats.find(function(x){return x.id===base.id;});
   optStop=false; out.innerHTML='<div class="card">Loading data…</div>';
   getBtData(sym,tf,days,btProg(out,'Optimizer')).then(function(Dx){
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
     var cut=btCut(Dx,days), t0=Dx.t[cut.i], t1=Dx.t[lc], split=Math.floor(t0+(t1-t0)*0.7), MD=30.44*86400;
     var mA=Math.max(1,(split-t0)/MD), mB=Math.max(1,(t1-split)/MD);
-    function part(T,mons){ var r={n:T.length,w:0,net:0,gp:0,gl:0,mon:{}};
+    function roll30(T,a,b){ var W=30*86400, tot=0, pos=0, j0=0, j1=0, sum=0;
+      for(var w=a; w+W<=b; w+=7*86400){ while(j1<T.length && T[j1].t<w+W){ sum+=T[j1].v; j1++; } while(j0<j1 && T[j0].t<w){ sum-=T[j0].v; j0++; } tot++; if(sum>0) pos++; }
+      return tot?100*pos/tot:0; }
+    function part(T,mons,a,b){ var r={n:T.length,w:0,net:0,gp:0,gl:0,mon:{}};
       T.forEach(function(t){ var v=money?t.rs:t.pts; r.net+=v; if(v>0){ r.w++; r.gp+=v; } else r.gl-=v; var d=new Date(t.t*1000), k=d.getUTCFullYear()*12+d.getUTCMonth(); r.mon[k]=(r.mon[k]||0)+v; });
       var g=0; for(var k in r.mon) if(r.mon[k]>0) g++;
-      r.months=mons; r.perMon=r.net/mons; r.winsMon=r.w/mons; r.tradesMon=r.n/mons; r.win=r.n?100*r.w/r.n:0; r.pf=r.gl>0?r.gp/r.gl:(r.gp>0?99:0); r.green=100*g/Math.max(1,Math.round(mons)); return r; }
+      r.months=mons; r.perMon=r.net/mons; r.winsMon=r.w/mons; r.tradesMon=r.n/mons; r.win=r.n?100*r.w/r.n:0; r.pf=r.gl>0?r.gp/r.gl:(r.gp>0?99:0); r.green=100*g/Math.max(1,Math.round(mons));
+      r.p30=roll30(T.map(function(t){ return {t:t.t,v:money?t.rs:t.pts}; }),a,b); return r; }
     function ev(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=t0 && t.why!=='Open'; });
       if(money) rupeeTrades(tr,cfg);
-      return {A:part(tr.filter(function(t){ return t.t<split; }),mA),B:part(tr.filter(function(t){ return t.t>=split; }),mB),F:part(tr,mA+mB)}; }
+      return {A:part(tr.filter(function(t){ return t.t<split; }),mA,t0,split),B:part(tr.filter(function(t){ return t.t>=split; }),mB,split,t1),F:part(tr,mA+mB,t0,t1)}; }
     function score(r){ var a=r.A; if(a.n<Math.max(12,mA*0.5) || a.net<=0) return -1e15+a.net;
-      return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : a.perMon; }
+      return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : obj==='steady'? Math.round(a.p30)*1e6+a.perMon : a.perMon; }
     var sides=[['long','CALL'],['short','PUT']], res={}, si=0, runs=0, P=optSpace(base,tf), pass=0, pi=0, vi=0, cur, curR, curS;
-    function startSide(){ cur=JSON.parse(JSON.stringify(base)); cur.dir=sides[si][0]; cur.name=base.name+' · '+sides[si][1]+' best'; curR=ev(cur); curS=score(curR); runs++; pass=0; pi=0; vi=0; }
+    function startSide(){ cur=JSON.parse(JSON.stringify(sideS(base,si===0?1:-1))); delete cur.sides; cur.dir=sides[si][0]; cur.name=base.name+' · '+sides[si][1]+' best'; curR=ev(cur); curS=score(curR); runs++; pass=0; pi=0; vi=0; }
     startSide();
     function draw(){ out.innerHTML='<div class="card">🔍 Searching best <b>'+sides[si][1]+'</b> settings… round '+(pass+1)+'/2 · '+P[pi].n+' · '+runs+' combinations tested'+
       '<div class="hint">Learns on the first 70% of the period, then checks the last 30% it never saw.</div><button class="btn sm" id="optStopB" style="margin-top:6px">Stop</button></div>'; $('optStopB').onclick=function(){ optStop=true; }; }
@@ -1536,21 +1543,31 @@ function btOptimize(){
       if(optStop && !res.long){ out.innerHTML='<div class="card">Stopped.</div>'; return; }
       if(optStop && cur && !res[sides[si]&&sides[si][0]]) res[sides[si][0]]={s:cur,r:curR,ok:curS>-1e14,partial:true};
       var R=function(x){ return money?'₹'+Math.round(x).toLocaleString('en-IN'):fmt(x,1)+' pts'; };
-      var row=function(l,x){ return '<tr><td>'+l+'</td><td>'+fmt(x.tradesMon,1)+'</td><td>'+fmt(x.winsMon,1)+'</td><td>'+fmt(x.win,0)+'%</td><td>'+fmt(x.pf)+'</td><td class="'+(x.perMon>=0?'up':'dn')+'">'+R(x.perMon)+'</td><td>'+fmt(x.green,0)+'%</td></tr>'; };
-      var h='<div class="card" data-k="opt"><h3 class="chd">🔍 Best settings · '+symName(sym)+' '+tf+' · '+({net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+'</h3>'+
-        '<div class="small mut">'+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
-      ['long','short'].forEach(function(k){ var x=res[k]; if(!x) return; var nm=k==='long'?'CALL':'PUT';
-        h+='<h4 class="'+(k==='long'?'up':'dn')+'" style="margin-top:12px">'+nm+(x.partial?' (stopped early)':'')+'</h4>';
-        if(!x.ok) h+='<p class="hint dn">No profitable '+nm+' setting found for this pattern + filters.</p>';
-        h+='<p class="hint" style="margin:0 0 6px">'+optDesc(x.s,tf)+'</p><div style="overflow:auto"><table><tr><th></th><th>Trades/mo</th><th>Wins/mo</th><th>Win%</th><th>PF</th><th>Net/mo</th><th>Green months</th></tr>'+
-          row('Learn (70%)',x.r.A)+row('<b>Check (30%)</b>',x.r.B)+row('All',x.r.F)+'</table></div>'+
-          '<div class="row" style="margin-top:6px"><button class="btn sm pri" data-use="'+k+'">Load into quick edit</button><button class="btn sm" data-save="'+k+'">Save as new strategy</button></div>'; });
-      h+='<p class="hint" style="margin-top:8px">Trust a setting only if the <b>Check</b> row (data it never learned on) is still positive. Big drop from Learn → Check = over-fitted.</p></div>';
-      out.innerHTML=h; btCollapse(out);
-      Array.prototype.forEach.call(out.querySelectorAll('[data-use]'),function(b){ b.onclick=function(){ var x=res[b.getAttribute('data-use')]; btWork=JSON.parse(JSON.stringify(x.s)); btWork.id=base.id; btWork.name=base.name; btDirty=true; btQuick(); runBt(); }; });
-      Array.prototype.forEach.call(out.querySelectorAll('[data-save]'),function(b){ b.onclick=function(){ var x=res[b.getAttribute('data-save')]; var c=JSON.parse(JSON.stringify(x.s)); c.id=uid(); c.onChart=false; S.strats.push(c); save(); fillBtStrat(); toast('Saved “'+c.name+'”',2500); b.disabled=true; }; });
+      var row=function(l,x){ return '<tr><td>'+l+'</td><td>'+fmt(x.tradesMon,1)+'</td><td>'+fmt(x.winsMon,1)+'</td><td>'+fmt(x.win,0)+'%</td><td>'+fmt(x.pf)+'</td><td class="'+(x.perMon>=0?'up':'dn')+'">'+R(x.perMon)+'</td><td>'+fmt(x.p30,0)+'%</td></tr>'; };
+      // apply to the strategy: each side gets its own settings; a side that lost money on the check period is switched off
+      var pick=function(x){ return JSON.parse(JSON.stringify({pat:x.pat||{},sl:x.sl,tp:x.tp,start:x.start,end:x.end,sq:x.sq,maxTrades:x.maxTrades||0,maxLossDay:x.maxLossDay||0,stopAfterWin:!!x.stopAfterWin})); };
+      var good=function(x){ return x && x.ok && !x.partial && x.r.B.net>0; };
+      var gL=good(res.long), gS=good(res.short), applied=false, undo=orig?JSON.parse(JSON.stringify(orig)):null;
+      if(orig && (gL||gS) && res.long && res.short){
+        var nw=JSON.parse(JSON.stringify(btWork&&btWork.id===orig.id?btWork:orig));
+        nw.sides={long:pick(res.long.s),short:pick(res.short.s)}; nw.dir=gL&&gS?'both':gL?'long':'short'; nw.onChart=orig.onChart;
+        var ix=S.strats.indexOf(orig); S.strats[ix]=nw; btWork=null; btDirty=false; save(); try{ renderSignals(); }catch(e){} applied=true;
+      }
+      var h='<div class="card" data-k="opt"><h3 class="chd">'+(applied?'✅ Best settings applied':'🔍 Best settings')+' · '+symName(sym)+' '+tf+'</h3>'+
+        '<div class="small mut">Goal: '+({steady:'positive in most 30-day stretches',net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+' · '+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
+      ['long','short'].forEach(function(k){ var x=res[k]; if(!x) return; var nm=k==='long'?'CALL':'PUT', g=k==='long'?gL:gS;
+        h+='<h4 class="'+(k==='long'?'up':'dn')+'" style="margin-top:12px">'+nm+(applied?(g?' – applied':' – switched OFF (lost money on the check period)'):'')+(x.partial?' (stopped early)':'')+'</h4>';
+        h+='<p class="hint" style="margin:0 0 6px">'+optDesc(x.s,tf)+'</p><div style="overflow:auto"><table><tr><th></th><th>Trades/mo</th><th>Wins/mo</th><th>Win%</th><th>PF</th><th>Net/mo</th><th>+ in 30 days</th></tr>'+
+          row('Learn (70%)',x.r.A)+row('<b>Check (30%)</b>',x.r.B)+row('All',x.r.F)+'</table></div>'; });
+      h+='<p class="hint" style="margin-top:8px"><b>“+ in 30 days”</b> = how often a 30-day test of these settings ends in profit. Short tests (7 / 30 days) have only a few trades, so they can be negative even when the long run is positive – this column shows how often.</p>';
+      if(applied) h+='<div class="row"><button class="btn sm" id="optUndo">↺ Undo – restore previous settings</button></div>';
+      else h+='<p class="hint dn">Nothing applied: no CALL or PUT setting stayed profitable on the check period.</p>';
+      h+='</div>';
       var bx=res.long&&res.long.r.F, by=res.short&&res.short.r.F;
-      $('btBarTxt').innerHTML='<div><span class="big">Best found</span> <span class="sub">'+symName(sym)+' '+tf+'</span></div><div class="sub">'+(bx?'CALL '+R(bx.perMon)+'/mo · '+fmt(bx.winsMon,1)+' wins/mo':'')+(by?' · PUT '+R(by.perMon)+'/mo · '+fmt(by.winsMon,1)+' wins/mo':'')+'</div>';
+      var showOpt=function(){ var o=$('btOut'); o.insertAdjacentHTML('afterbegin',h); btCollapse(o);
+        var u=$('optUndo'); if(u) u.onclick=function(){ var ix=S.strats.findIndex(function(z){ return z.id===undo.id; }); if(ix>=0) S.strats[ix]=undo; btWork=null; btDirty=false; save(); try{ renderSignals(); }catch(e){} btQuick(); toast('Previous settings restored',2500); runBt(); }; };
+      if(applied){ btQuick(); btAfter=showOpt; runBt(); }
+      else { out.innerHTML=''; showOpt(); $('btBarTxt').innerHTML='<div><span class="big">Best found</span></div><div class="sub">'+(bx?'CALL '+R(bx.perMon)+'/mo':'')+(by?' · PUT '+R(by.perMon)+'/mo':'')+'</div>'; }
     }
     setTimeout(step,30);
   }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
@@ -1566,28 +1583,35 @@ function btQuick(){
   r1.appendChild(field('Pattern',sel(Object.keys(PATTERNS).map(function(k){return [k,PATTERNS[k].name];}),s.pattern||'none',function(v){ s.pattern=v; ch(); btQuick(); })));
   r1.appendChild(field('Trade',sel([['both','Calls & Puts'],['long','Calls only'],['short','Puts only']],s.dir||'both',function(v){ s.dir=v; ch(); })));
   d.appendChild(r1);
+  var e=s;
+  if(s.sides){ if(!s.sides[btQSide]) btQSide='long'; e=s.sides[btQSide]; e.pat=e.pat||{}; e.sl=e.sl||{type:'pattern',buf:0}; e.tp=e.tp||{type:'R',v:2};
+    var rs=el('div',{class:'row',style:'margin-top:8px'}); rs.appendChild(el('span',{class:'small mut'},'Settings for'));
+    [['long','CALL','up'],['short','PUT','dn']].forEach(function(x){ var b=el('button',{class:'btn sm'+(btQSide===x[0]?' pri':'')},x[1]); b.onclick=function(){ btQSide=x[0]; btQuick(); }; rs.appendChild(b); });
+    var bj=el('button',{class:'btn sm'},'Use one setting for both'); bj.onclick=function(){ var keep=s.sides[btQSide]; for(var k in keep) s[k]=keep[k]; delete s.sides; ch(); btQuick(); }; rs.appendChild(bj);
+    d.appendChild(rs);
+  } else { var rsp=el('div',{class:'row',style:'margin-top:6px'}); var bsp=el('button',{class:'btn sm'},'Separate CALL / PUT settings'); bsp.onclick=function(){ var b={pat:s.pat,sl:s.sl,tp:s.tp,start:s.start,end:s.end,sq:s.sq,maxTrades:s.maxTrades||0,maxLossDay:s.maxLossDay||0,stopAfterWin:!!s.stopAfterWin}; s.sides={long:JSON.parse(JSON.stringify(b)),short:JSON.parse(JSON.stringify(b))}; ch(); btQuick(); }; rsp.appendChild(bsp); d.appendChild(rsp); }
   if(s.pattern==='opcr'||s.pattern==='opcr_flip'){ var r2=el('div',{class:'row',style:'margin-top:6px'});
-    r2.appendChild(field('Max gap %',num(s.pat.gapPct!=null?s.pat.gapPct:10,function(v){s.pat.gapPct=v;ch();})));
-    r2.appendChild(field('Size ≥ ×',num(s.pat.rMin!=null?s.pat.rMin:1,function(v){s.pat.rMin=v;ch();})));
-    r2.appendChild(field('Size ≤ ×',num(s.pat.rMax!=null?s.pat.rMax:1.3,function(v){s.pat.rMax=v;ch();})));
-    r2.appendChild(field('Min body %',num(s.pat.minBodyPct!=null?s.pat.minBodyPct:0.02,function(v){s.pat.minBodyPct=v;ch();})));
+    r2.appendChild(field('Max gap %',num(e.pat.gapPct!=null?e.pat.gapPct:10,function(v){e.pat.gapPct=v;ch();})));
+    r2.appendChild(field('Size ≥ ×',num(e.pat.rMin!=null?e.pat.rMin:1,function(v){e.pat.rMin=v;ch();})));
+    r2.appendChild(field('Size ≤ ×',num(e.pat.rMax!=null?e.pat.rMax:1.3,function(v){e.pat.rMax=v;ch();})));
+    r2.appendChild(field('Min body %',num(e.pat.minBodyPct!=null?e.pat.minBodyPct:0.02,function(v){e.pat.minBodyPct=v;ch();})));
     d.appendChild(r2); }
-  if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('ORB minutes',num(s.pat.orbMins||15,function(v){s.pat.orbMins=v;ch();}))); d.appendChild(r2b); }
+  if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('ORB minutes',num(e.pat.orbMins||15,function(v){e.pat.orbMins=v;ch();}))); d.appendChild(r2b); }
   var r3=el('div',{class:'row',style:'margin-top:6px'});
-  var fv3=field('SL value (pts / % / ×ATR)',num(s.sl.v||'',function(v){s.sl.v=v;ch();})), fb3=field('SL buffer beyond candles (pts)',num(s.sl.buf||0,function(v){s.sl.buf=v;ch();})), tv4;
-  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],s.sl.type||'pattern',function(v){s.sl.type=v; slVis(s,fv3,fb3,tv4); ch();})));
+  var fv3=field('SL value (pts / % / ×ATR)',num(e.sl.v||'',function(v){e.sl.v=v;ch();})), fb3=field('SL buffer beyond candles (pts)',num(e.sl.buf||0,function(v){e.sl.buf=v;ch();})), tv4;
+  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],e.sl.type||'pattern',function(v){e.sl.type=v; slVis(e,fv3,fb3,tv4); ch();})));
   r3.appendChild(fv3); r3.appendChild(fb3);
   d.appendChild(r3);
   var r4=el('div',{class:'row',style:'margin-top:6px'});
-  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],s.tp.type||'R',function(v){s.tp.type=v; slVis(s,fv3,fb3,tv4); ch();})));
-  tv4=field('Target value',num(s.tp.v,function(v){s.tp.v=v;ch();})); r4.appendChild(tv4); slVis(s,fv3,fb3,tv4);
-  r4.appendChild(field('Max trades/day',num(s.maxTrades||0,function(v){s.maxTrades=v;ch();},1)));
-  r4.appendChild(field('Day loss limit pts',num(s.maxLossDay||0,function(v){s.maxLossDay=v;ch();})));
+  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],e.tp.type||'R',function(v){e.tp.type=v; slVis(e,fv3,fb3,tv4); ch();})));
+  tv4=field('Target value',num(e.tp.v,function(v){e.tp.v=v;ch();})); r4.appendChild(tv4); slVis(e,fv3,fb3,tv4);
+  r4.appendChild(field('Max trades/day',num(e.maxTrades||0,function(v){e.maxTrades=v;ch();},1)));
+  r4.appendChild(field('Day loss limit pts',num(e.maxLossDay||0,function(v){e.maxLossDay=v;ch();})));
   d.appendChild(r4);
   var r5=el('div',{class:'row',style:'margin-top:6px'});
-  [['start','From','09:20'],['end','Until','15:00'],['sq','Exit at','15:15']].forEach(function(f){ var t=el('input',{type:'time',value:s[f[0]]||f[2]}); t.onchange=function(){ s[f[0]]=t.value; ch(); }; r5.appendChild(field(f[1],t)); });
+  [['start','From','09:20'],['end','Until','15:00'],['sq','Exit at','15:15']].forEach(function(f){ var t=el('input',{type:'time',value:e[f[0]]||f[2]}); t.onchange=function(){ e[f[0]]=t.value; ch(); }; r5.appendChild(field(f[1],t)); });
   d.appendChild(r5);
-  var ck=el('label',{class:'chk',style:'margin-top:8px'}); var cb=el('input',{type:'checkbox'}); cb.checked=!!s.stopAfterWin; cb.onchange=function(){ s.stopAfterWin=cb.checked; ch(); }; ck.appendChild(cb); ck.appendChild(document.createTextNode(' Stop for the day after a win')); d.appendChild(ck);
+  var ck=el('label',{class:'chk',style:'margin-top:8px'}); var cb=el('input',{type:'checkbox'}); cb.checked=!!e.stopAfterWin; cb.onchange=function(){ e.stopAfterWin=cb.checked; ch(); }; ck.appendChild(cb); ck.appendChild(document.createTextNode(' Stop for the day after a win')); d.appendChild(ck);
   var dc=el('details',{style:'margin-top:8px'}); dc.appendChild(el('summary',{style:'cursor:pointer;font-size:13px'},'CALL / PUT filters ('+s.long.length+' / '+s.short.length+')'));
   dc.appendChild(el('h4',null,'CALL filters')); var lb=el('div'); dc.appendChild(lb); condListEditor(s,'long',lb);
   dc.appendChild(el('h4',null,'PUT filters')); var sb=el('div'); dc.appendChild(sb); condListEditor(s,'short',sb);
@@ -1607,9 +1631,9 @@ function btQuick(){
   };
   r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
   var r7=el('div',{class:'row',style:'margin-top:8px;align-items:flex-end'});
-  var ob=sel([['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'net',function(v){ S.optObj=v; save(); });
+  var ob=sel([['steady','Profitable in most 30-day stretches'],['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'steady',function(v){ S.optObj=v; save(); });
   r7.appendChild(field('Find best settings for',ob));
-  var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'🔍 Find best CALL & PUT settings'); bo.onclick=btOptimize; r7.appendChild(bo);
+  var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✨ Find & apply best CALL + PUT settings'); bo.onclick=btOptimize; r7.appendChild(bo);
   d.appendChild(r7);
   d.appendChild(el('p',{class:'hint'},'Changes re-run the backtest automatically. They only affect this test until you save.'));
   box.appendChild(d);
