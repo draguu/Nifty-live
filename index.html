@@ -50,7 +50,16 @@ small,.small{font-size:11px}
 #chart{position:absolute;inset:0}
 #legend{position:absolute;left:8px;top:4px;z-index:5;font-size:11px;color:#aab2c3;pointer-events:none;text-shadow:0 0 3px #000;max-width:75%}
 #legend span{margin-right:7px;white-space:nowrap}
-#zoom{position:absolute;right:62px;bottom:30px;z-index:6;display:flex;gap:5px}
+#zoom{position:absolute;right:158px;bottom:34px;z-index:6;display:flex;gap:5px}
+#joy{position:absolute;right:66px;bottom:34px;width:84px;height:84px;border-radius:50%;z-index:7;touch-action:none;-webkit-user-select:none;user-select:none;
+  background:radial-gradient(circle,rgba(255,255,255,.04) 0,rgba(255,255,255,.08) 70%);border:1px solid rgba(255,255,255,.14);opacity:.7;transition:opacity .15s}
+#joy:before,#joy:after{content:'';position:absolute;background:rgba(255,255,255,.10);pointer-events:none}
+#joy:before{left:50%;top:12px;bottom:12px;width:1px}#joy:after{top:50%;left:12px;right:12px;height:1px}
+#joy .jk{position:absolute;left:50%;top:50%;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:50%;background:rgba(255,255,255,.28);box-shadow:0 2px 8px #0009;pointer-events:none}
+#joy.act{opacity:1}#joy.act .jk{background:rgba(255,255,255,.5)}#joy.hm .jk{background:rgba(255,179,0,.55)}
+#joy .tip{position:absolute;bottom:92px;right:0;white-space:nowrap;font-size:11px;background:rgba(20,24,32,.92);border:1px solid var(--bd);border-radius:6px;padding:2px 6px;display:none;pointer-events:none}
+#joy.act .tip{display:block}
+#joy .jm{position:absolute;left:0;right:0;bottom:-16px;text-align:center;font-size:10px;color:rgba(255,255,255,.4);pointer-events:none}
 .psl{position:absolute;z-index:7;touch-action:none;-webkit-user-select:none;user-select:none;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);transition:background .15s,opacity .15s;opacity:.75}
 .psl.v{width:30px;top:24%;height:44%}
 .psl.h{height:30px;bottom:30px;left:44px;right:110px}
@@ -145,13 +154,12 @@ td:first-child,th:first-child{text-align:left}
     <div id="legend"></div>
     <div id="chart"></div>
     <div id="status">loading…</div>
-    <div class="psl v" id="slZoom" title="Candle height (double-tap to reset)"><span class="ic" style="top:5px">↕</span><div class="kn"></div><div class="tip"></div></div>
-    <div class="psl h" id="slPan" title="Candle width – wide / narrow view"><span class="ic" style="left:9px">↔</span><div class="kn"></div><div class="tip"></div></div>
+    <div id="joy" title="Joystick: ← → move · ↑ ↓ zoom · hold = candle height · double-tap = latest"><div class="jk"></div><div class="tip"></div><span class="jm">⇆</span></div>
     <div id="zoom">
       <button id="zEnd" title="Go to latest">⇥</button>
     </div>
   </div>
-  <div id="mtfBar" class="bar" style="display:none"><span class="small mut">Overlay:</span><span id="mtfBtns" class="row" style="gap:4px"></span><span class="grow"></span><button class="btn sm" id="mtfOff">Off</button></div>
+  <div id="mtfBar" class="bar" style="display:none"><span class="small mut">Overlay (pick one or more):</span><span id="mtfBtns" class="row" style="gap:4px"></span><span class="grow"></span><button class="btn sm" id="mtfOff">Clear</button></div>
   <div id="drBar" class="bar" style="display:none">
     <button class="btn sm" data-tool="h">— H-line</button>
     <button class="btn sm" data-tool="v">| V-line</button>
@@ -252,7 +260,7 @@ td:first-child,th:first-child{text-align:left}
         <label class="chk"><input type="checkbox" id="setVib"> Vibrate</label>
         <label class="chk"><input type="checkbox" id="setVol"> Volume bars</label>
         <label class="chk"><input type="checkbox" id="setDay"> Day separator lines</label>
-        <label class="lbl">Chart sliders (↕ height, ↔ width)<select id="setSl"><option value="left">Left hand side</option><option value="right">Right hand side</option><option value="off">Off</option></select></label>
+        <label class="lbl">Chart joystick<select id="setSl"><option value="on">On</option><option value="off">Off</option></select></label>
       </div>
       <p class="hint">Outside market hours (Mon–Fri 9:00–15:35 IST) the chart refreshes every 30 s to save data.</p>
     </div>
@@ -1050,24 +1058,31 @@ function mtfKey(i,k){ var d=D.day[i]; if(k==='1M'){ var dt=new Date(d*86400000);
 function mtfCandles(k){ var ck='__mtf_'+k; if(D.cache[ck]) return D.cache[ck]; var out=[], c=null, last=null;
   for(var i=0;i<D.n;i++){ var key=mtfKey(i,k); if(key!==last){ c={i0:i,i1:i,o:D.o[i],h:D.h[i],l:D.l[i],c:D.c[i]}; out.push(c); last=key; } else { c.i1=i; if(D.h[i]>c.h) c.h=D.h[i]; if(D.l[i]<c.l) c.l=D.l[i]; c.c=D.c[i]; } }
   return (D.cache[ck]=out); }
+function mtfSel(){ var m=S.mtf||{}; if(!m.tfs){ m.tfs=(m.on&&m.tf)?[m.tf]:[]; S.mtf=m; } var cur=TF[S.tf].min; return m.tfs.filter(function(k){ return MTF_TF[k]&&MTF_TF[k]>cur; }); }
 function drawMTF(ctx,size,ts,r){
-  var k=S.mtf&&S.mtf.on&&S.mtf.tf; if(!k||!MTF_TF[k]||MTF_TF[k]<=TF[S.tf].min) return;
-  var list=mtfCandles(k), sp=size.width/Math.max(1,(r.to-r.from)), lo=Math.floor(r.from)-1, hi=Math.ceil(r.to)+1, y=function(p){ return cSeries.priceToCoordinate(p); };
-  ctx.save();
-  for(var q=0;q<list.length;q++){ var b=list[q]; if(b.i1<lo||b.i0>hi) continue;
-    var x0=ts.logicalToCoordinate(b.i0), x1=ts.logicalToCoordinate(b.i1); if(x0==null||x1==null) continue;
-    x0-=sp/2-0.5; x1+=sp/2-0.5; var up=b.c>=b.o, yo=y(b.o), yc=y(b.c), yh=y(b.h), yl=y(b.l); if(yo==null||yc==null||yh==null||yl==null) continue;
-    var col=up?'38,166,154':'239,83,80', xm=(x0+x1)/2, top=Math.min(yo,yc), bh=Math.max(1,Math.abs(yc-yo));
-    ctx.strokeStyle='rgba('+col+',0.55)'; ctx.lineWidth=Math.max(1,Math.min(3,sp/4)); ctx.beginPath(); ctx.moveTo(xm,yh); ctx.lineTo(xm,top); ctx.moveTo(xm,top+bh); ctx.lineTo(xm,yl); ctx.stroke();
-    ctx.fillStyle='rgba('+col+',0.13)'; ctx.fillRect(x0,top,x1-x0,bh);
-    ctx.strokeStyle='rgba('+col+',0.6)'; ctx.lineWidth=1; ctx.strokeRect(Math.round(x0)+0.5,Math.round(top)+0.5,Math.round(x1-x0),Math.round(bh)); }
+  var sel=mtfSel(); if(!sel.length) return;
+  sel=sel.slice().sort(function(a,b){ return MTF_TF[b]-MTF_TF[a]; }); // biggest first = furthest back
+  var sp=size.width/Math.max(1,(r.to-r.from)), lo=Math.floor(r.from)-1, hi=Math.ceil(r.to)+1, y=function(p){ return cSeries.priceToCoordinate(p); };
+  ctx.save(); ctx.font='10px -apple-system,Segoe UI,Roboto,sans-serif';
+  sel.forEach(function(k,lv){
+    var list=mtfCandles(k), big=lv<sel.length-1, fa=big?0.07:0.12, sa=big?0.45:0.6;
+    ctx.setLineDash(big?[4,3]:[]);
+    for(var q=0;q<list.length;q++){ var b=list[q]; if(b.i1<lo||b.i0>hi) continue;
+      var x0=ts.logicalToCoordinate(b.i0), x1=ts.logicalToCoordinate(b.i1); if(x0==null||x1==null) continue;
+      x0-=sp/2-0.5; x1+=sp/2-0.5; var up=b.c>=b.o, yo=y(b.o), yc=y(b.c), yh=y(b.h), yl=y(b.l); if(yo==null||yc==null||yh==null||yl==null) continue;
+      var col=up?'38,166,154':'239,83,80', xm=(x0+x1)/2, top=Math.min(yo,yc), bh=Math.max(1,Math.abs(yc-yo));
+      ctx.strokeStyle='rgba('+col+','+sa+')'; ctx.lineWidth=Math.max(1,Math.min(3,sp/4)); ctx.beginPath(); ctx.moveTo(xm,yh); ctx.lineTo(xm,top); ctx.moveTo(xm,top+bh); ctx.lineTo(xm,yl); ctx.stroke();
+      ctx.fillStyle='rgba('+col+','+fa+')'; ctx.fillRect(x0,top,x1-x0,bh);
+      ctx.strokeStyle='rgba('+col+','+sa+')'; ctx.lineWidth=1; ctx.strokeRect(Math.round(x0)+0.5,Math.round(top)+0.5,Math.round(x1-x0),Math.round(bh));
+      if(sel.length>1 && x1-x0>34){ ctx.fillStyle='rgba(200,206,220,0.55)'; ctx.fillText(k,x0+3,yh-3); } }
+  });
   ctx.restore();
 }
-function mtfUI(){ var box=$('mtfBtns'); box.innerHTML=''; var on=S.mtf&&S.mtf.on, list=mtfList();
-  if(on && list.indexOf(S.mtf.tf)<0){ S.mtf.tf=list[0]; }
-  list.forEach(function(k){ var b=el('button',{class:'btn sm'+(on&&S.mtf.tf===k?' on':'')},k); b.onclick=function(){ S.mtf={on:!(on&&S.mtf.tf===k),tf:k}; save(); mtfUI(); if(ovReq) ovReq(); }; box.appendChild(b); });
+function mtfUI(){ var box=$('mtfBtns'); box.innerHTML=''; var list=mtfList(), sel=mtfSel();
+  list.forEach(function(k){ var on=sel.indexOf(k)>=0, b=el('button',{class:'btn sm'+(on?' on':'')},k);
+    b.onclick=function(){ var t=S.mtf.tfs, ix=t.indexOf(k); if(ix>=0) t.splice(ix,1); else t.push(k); S.mtf.on=t.length>0; save(); mtfUI(); if(ovReq) ovReq(); }; box.appendChild(b); });
   if(!list.length) box.appendChild(el('span',{class:'small mut'},'No higher timeframe'));
-  $('btnMtf').className='btn sm'+(on?' on':''); $('btnMtf').textContent=on?'⧉ '+S.mtf.tf:'⧉ MTF'; }
+  $('btnMtf').className='btn sm'+(sel.length?' on':''); $('btnMtf').textContent=sel.length?'⧉ '+sel.slice().sort(function(x,y){ return MTF_TF[x]-MTF_TF[y]; }).join(' + '):'⧉ MTF'; }
 function drawOverlay(ctx,size,layer){
   if(!chart||!D||!D.n) return; var ts=chart.timeScale(), r=ts.getVisibleLogicalRange(); if(!r) return;
   if(layer==='bottom'){
@@ -1240,43 +1255,42 @@ $('symTxt').onkeydown=function(e){ if(e.key==='Enter') $('symGo').click(); };
 Object.keys(TF).forEach(function(tf){ $('tfSel').appendChild(el('option',{value:tf},tf)); }); $('tfSel').value=S.tf;
 $('tfSel').onchange=function(){ var v=this.value; var b=Array.prototype.find.call($('tfBtns').children,function(x){ return x.textContent===v; }); if(b) b.click(); };
 $('btnTools').onclick=function(){ var t=$('toolBar'), show=t.style.display==='none'; t.style.display=show?'flex':'none'; $('btnTools').className='btn sm ico'+(show?' on':''); setTimeout(function(){ try{ chart.applyOptions({}); }catch(e){} slPaint(); },50); };
-S.mtf=S.mtf||{on:false,tf:'15m'};
+S.mtf=S.mtf||{on:false,tfs:[]}; mtfSel();
 $('btnMtf').onclick=function(){ var bar=$('mtfBar'), show=bar.style.display==='none'; bar.style.display=show?'flex':'none'; mtfUI(); };
-$('mtfOff').onclick=function(){ S.mtf.on=false; save(); mtfUI(); if(ovReq) ovReq(); $('mtfBar').style.display='none'; };
+$('mtfOff').onclick=function(){ S.mtf.on=false; S.mtf.tfs=[]; save(); mtfUI(); if(ovReq) ovReq(); $('mtfBar').style.display='none'; };
 mtfUI();
-// ---------------- Procreate-style sliders: ↕ candle height, ↔ candle width ----------------
+// ---------------- joystick: ← → pan · ↑ ↓ zoom (wide / narrow) · hold = candle height ----------------
 var SL={busy:false}, VZ=1;
 function candAuto(orig){ var r=orig(); if(!r||!r.priceRange||VZ===1) return r; var a=r.priceRange.minValue,b=r.priceRange.maxValue,c=(a+b)/2,h=Math.max(1e-9,(b-a)/2)*VZ; return {priceRange:{minValue:c-h,maxValue:c+h},margins:r.margins}; }
 function ovAuto(orig){ return VZ===1?orig():null; }
 function vzApply(){ if(!cSeries) return; try{ chart.priceScale('right').applyOptions({autoScale:true}); cSeries.applyOptions({autoscaleInfoProvider:candAuto}); }catch(e){} }
-function slSide(){ var v=S.sliders||'left'; ['slZoom','slPan'].forEach(function(id){ var e=$(id); e.style.display=v==='off'?'none':''; e.classList.toggle('left',v!=='right'); e.classList.toggle('right',v==='right'); });
-  $('slPan').style.left=v==='right'?'14px':'44px'; $('slPan').style.right=v==='right'?'150px':'110px'; }
-function slMetrics(){ var r=chart&&chart.timeScale().getVisibleLogicalRange(); if(!r||!D) return null; var n=D.n, w=r.to-r.from, minB=10, maxB=Math.max(minB+1,n*1.05); return {r:r,n:n,w:w,minB:minB,maxB:maxB}; }
-function slWidthVal(m){ return 1-Math.log(Math.max(m.minB,Math.min(m.maxB,m.w))/m.minB)/Math.log(m.maxB/m.minB); }
-function slHeightVal(){ return Math.max(0,Math.min(1,0.5-Math.log(VZ)/Math.log(4)/2)); }
-function slPaint(){ var z=$('slZoom'), p=$('slPan'); if(!z||!p) return; z.querySelector('.kn').style.top=((1-slHeightVal())*(z.clientHeight-30))+'px';
-  var m=slMetrics(); if(m) p.querySelector('.kn').style.left=(slWidthVal(m)*(p.clientWidth-44))+'px'; }
-function slTip(el,txt){ el.querySelector('.tip').textContent=txt; }
-function slDrag(id,horiz,start,apply){
-  var e=$(id), st=null, lastTap=0;
-  e.addEventListener('pointerdown',function(ev){ ev.preventDefault(); ev.stopPropagation(); var m=slMetrics(); if(!m) return; try{ e.setPointerCapture(ev.pointerId); }catch(x){} e.classList.add('act');
-    st={x:ev.clientX,y:ev.clientY,m:m,v:start(m),moved:false}; SL.busy=true; apply(st.v,st.m); });
-  e.addEventListener('pointermove',function(ev){ if(!st) return; ev.preventDefault(); var len=horiz?e.clientWidth-44:e.clientHeight-30, d=horiz?(ev.clientX-st.x):(st.y-ev.clientY);
-    if(Math.abs(d)>3) st.moved=true; apply(Math.max(0,Math.min(1,st.v+d/Math.max(40,len))),st.m); });
-  var end=function(){ if(!st) return; var tap=!st.moved; st=null; SL.busy=false; e.classList.remove('act');
-    if(tap){ var now=Date.now(); if(now-lastTap<350) e.dispatchEvent(new Event('reset')); lastTap=now; } slPaint(); };
-  e.addEventListener('pointerup',end); e.addEventListener('pointercancel',end);
-}
-// ↕ vertical: taller / shorter candles (price zoom). Up = taller.
-slDrag('slZoom',false,function(){ return slHeightVal(); },function(v){ VZ=Math.pow(4,1-2*v); vzApply(); slTip($('slZoom'),'Height ×'+(1/VZ).toFixed(2)); slPaint(); });
-$('slZoom').addEventListener('reset',function(){ VZ=1; vzApply(); slPaint(); toast('Candle height reset',1200); });
-// ↔ horizontal: wide / narrow view (time zoom), like a two-finger pinch. Right = wider candles.
-slDrag('slPan',true,function(m){ return slWidthVal(m); },function(v,m){ var bars=m.minB*Math.pow(m.maxB/m.minB,1-v), live=m.r.to>=m.n-2;
-  var c=live?null:(m.r.from+m.r.to)/2, from=live?m.r.to-bars:c-bars/2, to=live?m.r.to:c+bars/2; chart.timeScale().setVisibleLogicalRange({from:from,to:to});
-  slTip($('slPan'),Math.round(bars)+' candles'); slPaint(); });
-$('slPan').addEventListener('reset',function(){ $('zFit').click(); });
-$('setSl').value=S.sliders||'left'; $('setSl').onchange=function(){ S.sliders=this.value; save(); slSide(); slPaint(); };
-slSide();
+function slPaint(){}
+(function(){
+  var J=$('joy'), K=J.querySelector('.jk'), T=J.querySelector('.tip'), M=J.querySelector('.jm'), st=null, raf=0, lastTap=0, R=26;
+  function setVis(){ J.style.display=(S.sliders==='off')?'none':''; }
+  function tick(){ if(!st){ raf=0; return; } var r=chart.timeScale().getVisibleLogicalRange(); if(r&&D){
+      var n=D.n, w=r.to-r.from, dz=0.15, ax=Math.abs(st.dx)<dz?0:(st.dx-Math.sign(st.dx)*dz)/(1-dz), ay=Math.abs(st.dy)<dz?0:(st.dy-Math.sign(st.dy)*dz)/(1-dz);
+      if(st.height){ if(ay){ VZ=Math.max(0.2,Math.min(5,VZ*Math.exp(-ay*0.035))); vzApply(); } T.textContent='Candle height ×'+(1/VZ).toFixed(2); }
+      else { var nw=w, from=r.from, to=r.to;
+        if(ay){ nw=Math.max(10,Math.min(Math.max(12,n*1.05),w*Math.exp(-ay*0.035))); var live=to>=n-2;
+          if(live){ from=to-nw; } else { var c=(from+to)/2; from=c-nw/2; to=c+nw/2; } }
+        if(ax){ var sh=Math.sign(ax)*ax*ax*nw*0.03; from+=sh; to+=sh; if(to>n+5){ from-=to-(n+5); to=n+5; } }
+        if(ax||ay) chart.timeScale().setVisibleLogicalRange({from:from,to:to});
+        var li=Math.max(0,Math.min(n-1,Math.round(to-1))); T.textContent=Math.round(nw)+' candles · '+dmy(D.t[li])+(S.tf==='1d'?'':' '+hhmm(D.t[li])); } }
+    raf=requestAnimationFrame(tick); }
+  function place(ev){ var b=J.getBoundingClientRect(), cx=b.left+b.width/2, cy=b.top+b.height/2, x=ev.clientX-cx, y=ev.clientY-cy, d=Math.sqrt(x*x+y*y);
+    if(d>R){ x=x*R/d; y=y*R/d; } K.style.transform='translate('+x+'px,'+y+'px)'; st.dx=x/R; st.dy=-y/R; if(d>6) st.moved=true; }
+  J.addEventListener('pointerdown',function(ev){ ev.preventDefault(); ev.stopPropagation(); try{ J.setPointerCapture(ev.pointerId); }catch(x){}
+    st={dx:0,dy:0,moved:false,height:false,t0:Date.now()}; J.classList.add('act'); SL.busy=true; place(ev);
+    st.hold=setTimeout(function(){ if(st&&!st.moved){ st.height=true; J.classList.add('hm'); M.textContent='↕ height'; try{ navigator.vibrate&&navigator.vibrate(15); }catch(x){} } },450);
+    if(!raf) raf=requestAnimationFrame(tick); });
+  J.addEventListener('pointermove',function(ev){ if(!st) return; ev.preventDefault(); place(ev); });
+  function end(){ if(!st) return; clearTimeout(st.hold); var tap=!st.moved&&!st.height&&Date.now()-st.t0<300; st=null; SL.busy=false;
+    J.classList.remove('act'); J.classList.remove('hm'); M.textContent='⇆'; K.style.transform='';
+    if(tap){ var now=Date.now(); if(now-lastTap<350){ VZ=1; vzApply(); chart.timeScale().scrollToRealTime(); toast('Back to latest',1000); } lastTap=now; } }
+  J.addEventListener('pointerup',end); J.addEventListener('pointercancel',end);
+  $('setSl').value=S.sliders==='off'?'off':'on'; $('setSl').onchange=function(){ S.sliders=this.value; save(); setVis(); }; setVis();
+})();
 Object.keys(TF).forEach(function(tf){ var b=el('button',{class:'btn sm'+(tf===S.tf?' on':'')},tf); b.onclick=function(){ S.tf=tf; save(); mtfUI(); $('tfSel').value=tf; Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); }); loadAll(); }; $('tfBtns').appendChild(b); });
 
 // ---------------- sheet ----------------
