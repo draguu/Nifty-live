@@ -43,7 +43,7 @@ small{color:#8a93a6}
 <div id="app">
   <div class="bar">
     <select id="symSel"></select>
-    <input id="symTxt" type="text" placeholder="Yahoo symbol" autocapitalize="characters">
+    <input id="symTxt" type="text" placeholder="NSE symbol e.g. TATAMOTORS" autocapitalize="characters">
     <button id="go">Go</button>
     <span id="price">--</span><span id="chg"></span>
     <span id="status">starting…</span>
@@ -58,7 +58,7 @@ small{color:#8a93a6}
     </div>
     <div id="tabSettings" style="display:none">
       <div class="grid" id="settings"></div>
-      <p><small>Backtest = index points on loaded candles only (not option premium). Yahoo data may be delayed ~1 min; do not rely on it for live order entry.</small></p>
+      <p><small>Backtest = index points on loaded candles only (not option premium). Data: Moneycontrol chart feed (free, may lag a little); do not rely on it for live order entry.</small></p>
     </div>
   </div>
   <div class="tabs">
@@ -189,12 +189,12 @@ function summarize(trades){
 (function(){
   var S = {};
   var saved = null;
-  try { saved = JSON.parse(localStorage.getItem('opcr_live_v1')||'null'); } catch(e){}
-  var st = {sym:'^NSEI', tf:'5m', demo:false, settings:JSON.parse(JSON.stringify(DEFAULTS))};
+  try { saved = JSON.parse(localStorage.getItem('opcr_live_v2')||'null'); } catch(e){}
+  var st = {sym:'idx:in;NSX', tf:'5m', demo:false, settings:JSON.parse(JSON.stringify(DEFAULTS))};
   if(saved){ for(var k in saved){ if(k==='settings'){ for(var q in saved.settings) st.settings[q]=saved.settings[q]; } else st[k]=saved[k]; } }
-  function persist(){ try{ localStorage.setItem('opcr_live_v1', JSON.stringify(st)); }catch(e){} }
+  function persist(){ try{ localStorage.setItem('opcr_live_v2', JSON.stringify(st)); }catch(e){} }
 
-  var SYMS = [['Nifty 50','^NSEI'],['Bank Nifty','^NSEBANK'],['Sensex','^BSESN'],['Fin Nifty','NIFTY_FIN_SERVICE.NS'],['Reliance','RELIANCE.NS'],['HDFC Bank','HDFCBANK.NS'],['TCS','TCS.NS'],['Infosys','INFY.NS'],['ICICI Bank','ICICIBANK.NS'],['SBI','SBIN.NS'],['Gold (USD)','GC=F'],['Bitcoin','BTC-USD']];
+  var SYMS = [['Nifty 50','idx:in;NSX'],['Bank Nifty','idx:in;nbx'],['Sensex','idx:in;SEN'],['Reliance','RELIANCE'],['HDFC Bank','HDFCBANK'],['ICICI Bank','ICICIBANK'],['TCS','TCS'],['Infosys','INFY'],['SBI','SBIN'],['Axis Bank','AXISBANK'],['Kotak Bank','KOTAKBANK'],['L&T','LT']];
   var symSel = document.getElementById('symSel');
   SYMS.forEach(function(x){ var o=document.createElement('option'); o.value=x[1]; o.textContent=x[0]; symSel.appendChild(o); });
   var o=document.createElement('option'); o.value='__custom'; o.textContent='Custom…'; symSel.appendChild(o);
@@ -298,44 +298,42 @@ function summarize(trades){
 
   function setStatus(t){ document.getElementById('status').textContent=t; }
 
-  // ---------- data ----------
-  var PROXIES = [
-    function(u){ return 'https://corsproxy.io/?url='+encodeURIComponent(u); },
-    function(u){ return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u); },
-    function(u){ return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u); },
-    function(u){ return u; }
-  ];
-  var proxyIdx=0;
+  // ---------- data (Moneycontrol chart API: CORS-enabled, no key) ----------
+  var MC_RES = {'1m':'1','5m':'5','15m':'15','30m':'30','60m':'60','1d':'1D'};
+  var MC_DAYS = {'1m':4,'5m':12,'15m':40,'30m':60,'60m':120,'1d':500};
+  var MC_COUNT = {'1m':1500,'5m':1500,'15m':1200,'30m':800,'60m':800,'1d':400};
   function fetchTimeout(url,ms){
     var ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
     var timer = setTimeout(function(){ if(ctl) ctl.abort(); }, ms);
     return fetch(url, ctl?{signal:ctl.signal,cache:'no-store'}:{cache:'no-store'}).then(function(r){ clearTimeout(timer); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
   }
-  function yahoo(sym, tf){
-    var path='/v8/finance/chart/'+encodeURIComponent(sym)+'?interval='+tf+'&range='+YF_RANGE[tf]+'&includePrePost=false&_='+Date.now();
-    var tries=[]; for(var i=0;i<PROXIES.length;i++) tries.push((proxyIdx+i)%PROXIES.length);
-    var hosts=['https://query1.finance.yahoo.com','https://query2.finance.yahoo.com'];
-    var attempt=0;
-    function next(){
-      if(attempt>=tries.length*2) return Promise.reject(new Error('all data routes failed'));
-      var px=tries[attempt%tries.length], host=hosts[Math.floor(attempt/tries.length)];
-      attempt++;
-      return fetchTimeout(PROXIES[px](host+path), 9000).then(function(j){
-        if(!j || !j.chart || !j.chart.result) throw new Error('bad response');
-        proxyIdx=px; return parseYahoo(j.chart.result[0]);
-      }).catch(function(){ return next(); });
-    }
-    return next();
+  function mcFetch(sym, tf){
+    var kind='stock', s=sym.trim();
+    if(s.indexOf('idx:')===0){ kind='index'; s=s.slice(4); }
+    else s=s.toUpperCase().replace(/\.NS$/,'');
+    var now=Math.floor(Date.now()/1000)+60, from=now-MC_DAYS[tf]*86400;
+    var url='https://priceapi.moneycontrol.com/techCharts/indianMarket/'+kind+'/history?symbol='+encodeURIComponent(s)+
+      '&resolution='+MC_RES[tf]+'&from='+from+'&to='+now+'&countback='+MC_COUNT[tf]+'&currencyCode=INR';
+    return fetchTimeout(url, 12000).then(function(j){
+      if(!j || j.s!=='ok' || !j.t || !j.t.length) throw new Error('no data for '+sym);
+      var off=19800, out=[];
+      for(var i=0;i<j.t.length;i++){
+        if(j.o[i]==null||j.c[i]==null) continue;
+        var t=j.t[i]+off;
+        if(tf!=='1d'){ var m=minOfDay(t); if(m<555 || m>=930) continue; }
+        else t=dayKey(t)*86400;
+        if(out.length && out[out.length-1].time>=t) continue;
+        out.push({time:t, open:j.o[i], high:j.h[i], low:j.l[i], close:j.c[i], volume:(j.v&&j.v[i])||0});
+      }
+      var pc=null;
+      if(out.length && tf!=='1d'){
+        var lastDay=dayKey(out[out.length-1].time);
+        for(var k=out.length-1;k>=0;k--){ if(dayKey(out[k].time)<lastDay){ pc=out[k].close; break; } }
+      } else if(out.length>1) pc=out[out.length-2].close;
+      return {candles:out, prevClose:pc, price:out.length?out[out.length-1].close:null, off:off};
+    });
   }
-  function parseYahoo(r){
-    var ts=r.timestamp||[], q=r.indicators.quote[0], out=[];
-    var off = (r.meta && typeof r.meta.gmtoffset==='number') ? r.meta.gmtoffset : 19800;
-    for(var i=0;i<ts.length;i++){
-      if(q.open[i]==null||q.high[i]==null||q.low[i]==null||q.close[i]==null) continue;
-      out.push({time:ts[i]+off, open:q.open[i], high:q.high[i], low:q.low[i], close:q.close[i], volume:q.volume?(q.volume[i]||0):0});
-    }
-    return {candles:out, prevClose:r.meta.chartPreviousClose, price:r.meta.regularMarketPrice, off:off};
-  }
+  function yahoo(sym, tf){ return mcFetch(sym, tf); }
 
   // demo data (random walk, 5 days)
   var demo={c:[],tf:null};
