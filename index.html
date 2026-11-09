@@ -74,6 +74,10 @@ td:first-child,th:first-child{text-align:left}
 .tmpl{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
 .opEd{background:var(--bg2);border:1px dashed var(--bd);border-radius:8px;padding:8px;margin:6px 0}
 .hint{font-size:12px;color:var(--mut);line-height:1.45}
+#rpBar{flex-direction:column;align-items:stretch;gap:6px;border-top:1px solid var(--bd)}
+#rpBar input{padding:4px 6px;font-size:12px}
+#rpBar select{padding:4px 6px;font-size:12px}
+.btn:disabled{opacity:.4}
 </style>
 </head>
 <body>
@@ -91,6 +95,7 @@ td:first-child,th:first-child{text-align:left}
   <div class="bar" id="tfs">
     <span id="tfBtns" class="row" style="gap:4px"></span>
     <span class="grow"></span>
+    <button class="btn sm" id="btnReplay">⏪ Replay</button>
     <button class="btn sm" id="btnInd">ƒx Indicators</button>
     <button class="btn sm" id="btnStratOn">⚑ <span id="stratOnCount">0</span></button>
   </div>
@@ -104,6 +109,26 @@ td:first-child,th:first-child{text-align:left}
       <button id="zFit" title="Fit all">⤢</button>
       <button id="zEnd" title="Go to latest">⇥</button>
     </div>
+  </div>
+  <div id="rpBar" class="bar" style="display:none">
+    <div class="row" style="gap:5px">
+      <button class="btn sm" id="rpPick">🎯 Pick start</button>
+      <button class="btn sm" id="rpBack" title="Step back">⏮</button>
+      <button class="btn sm pri" id="rpPlay" title="Play / pause">▶</button>
+      <button class="btn sm" id="rpFwd" title="Step forward">⏭</button>
+      <select id="rpSpeed"><option value="0.5">0.5 bar/s</option><option value="1" selected>1 bar/s</option><option value="2">2 bars/s</option><option value="5">5 bars/s</option><option value="10">10 bars/s</option></select>
+      <span class="grow"></span>
+      <button class="btn sm danger" id="rpExit">✕ Exit</button>
+    </div>
+    <div class="row" style="gap:5px">
+      <button class="btn sm" id="rpCall" style="background:#1e5f58;border-color:#26a69a">Buy CALL</button>
+      <button class="btn sm" id="rpPut" style="background:#7a2f2d;border-color:#ef5350">Buy PUT</button>
+      <button class="btn sm" id="rpClose">Close</button>
+      <input id="rpSL" type="number" step="any" placeholder="SL pts" style="width:68px">
+      <input id="rpTP" type="number" step="any" placeholder="TP pts" style="width:68px">
+      <button class="btn sm" id="rpList" title="Replay trades">📋</button>
+    </div>
+    <div id="rpInfo" class="small"></div>
   </div>
 </section>
 
@@ -553,6 +578,7 @@ function buildChart(){
   });
   var panes=chart.panes(); if(panes.length>1){ panes[0].setStretchFactor(3); for(var i=1;i<panes.length;i++) panes[i].setStretchFactor(1); }
   chart.subscribeCrosshairMove(legend);
+  chart.subscribeClick(function(p){ if(RP.on && RP.picking && p && p.time!==undefined && RP.full){ var t=p.time, lo=0, hi=RP.full.length-1; while(lo<hi){ var m=(lo+hi+1)>>1; if(RP.full[m].time<=t) lo=m; else hi=m-1; } rpStart(Math.max(1,lo)); toast('Replay starts after '+dmy(RP.full[lo].time)+' '+hhmm(RP.full[lo].time)+'. Press ▶ or ⏭.',3000); } });
   chart.timeScale().subscribeVisibleLogicalRangeChange(function(r){ if(r && r.from<15) loadOlder(); });
 }
 function lineData(arr,colorFn){
@@ -605,7 +631,7 @@ function legend(p){
   $('legend').innerHTML=h;
 }
 function binIdx(t){ var lo=0,hi=D.n-1; while(lo<hi){ var m=(lo+hi+1)>>1; if(D.t[m]<=t) lo=m; else hi=m-1; } return lo; }
-function lastClosedIdx(){ if(!D||!D.n) return -1; var L=D.t[D.n-1]; return (nowIST() < L+TF[S.tf].min*60 && S.tf!=='1d') ? D.n-2 : D.n-1; }
+function lastClosedIdx(){ if(!D||!D.n) return -1; if(RP.on) return D.n-1; var L=D.t[D.n-1]; return (nowIST() < L+TF[S.tf].min*60 && S.tf!=='1d') ? D.n-2 : D.n-1; }
 
 function renderSignals(){
   if(!D) return;
@@ -633,7 +659,8 @@ function renderSignals(){
       }
     } else if(lastAlertKey[s.id]===undefined) lastAlertKey[s.id]='none';
   });
-  if(btMarks && btMarks.sym===S.sym && btMarks.tf===S.tf) marks=marks.concat(btMarks.m);
+  if(btMarks && btMarks.sym===S.sym && btMarks.tf===S.tf && !RP.on) marks=marks.concat(btMarks.m);
+  if(RP.on){ var lt=D.t[D.n-1]; marks=marks.concat(RP.marks.filter(function(m){ return m.time<=lt; })); }
   marks.sort(function(a,b){return a.time-b.time;});
   markersApi.setMarkers(marks);
 }
@@ -649,6 +676,7 @@ window.__nlc=function(){ return {n:bars.length,first:bars.length?new Date((bars[
 // ---- loading ----
 var loadToken=0;
 function loadAll(){
+  if(RP.on){ rpStop(); RP.on=false; RP.full=null; RP.picking=false; RP.marks=[]; RP.pos=null; rpUI(); }
   var tok=++loadToken; busy=true; noMoreOld=false; bars=[]; prevClose=null; lastAlertKey={};
   setStatus('loading '+symName(S.sym)+' '+S.tf+'…');
   buildChart();
@@ -662,7 +690,7 @@ function loadAll(){
   }).catch(function(e){ if(tok===loadToken) setStatus('error: '+e.message); }).then(function(){ if(tok===loadToken) busy=false; });
 }
 function loadOlder(){
-  if(loadingOld||noMoreOld||!bars.length||!chart) return;
+  if(loadingOld||noMoreOld||!bars.length||!chart||RP.on) return;
   loadingOld=true; var tok=loadToken, firstT=bars[0].time-IST, span={'1m':4,'5m':40,'15m':120,'30m':200,'60m':365,'1d':3650}[S.tf];
   setStatus('loading older candles…');
   fetchBars(S.sym,S.tf,{to:firstT-1,from:firstT-1-span*86400}).then(function(old){
@@ -677,7 +705,7 @@ function loadOlder(){
 }
 var lastTick=0;
 function tick(){
-  if(busy||!bars.length||document.hidden) return;
+  if(RP.on||busy||!bars.length||document.hidden) return;
   var every=(marketOpen()?(+S.refresh||1):30)*1000;
   if(Date.now()-lastTick<every-50) return;
   lastTick=Date.now(); busy=true;
@@ -692,6 +720,113 @@ function tick(){
 }
 setInterval(function(){ tick(); try{ var vr=chart&&chart.timeScale().getVisibleLogicalRange(); if(vr&&vr.from<15) loadOlder(); }catch(e){} },250);
 document.addEventListener('visibilitychange',function(){ if(!document.hidden){ lastTick=0; } });
+
+// ---------------- replay ----------------
+var RP={on:false,full:null,idx:0,timer:null,picking:false,pos:null,trades:[],marks:[]};
+function rpUI(){
+  $('rpBar').style.display=RP.on?'flex':'none';
+  $('btnReplay').className='btn sm'+(RP.on?' on':'');
+  $('rpPlay').textContent=RP.timer?'⏸':'▶';
+  $('rpClose').disabled=!RP.pos;
+  if(!RP.on) return;
+  var pnl=RP.trades.reduce(function(a,t){return a+t.pts;},0), w=RP.trades.filter(function(t){return t.pts>0;}).length, open='';
+  var L=bars[bars.length-1];
+  if(RP.pos && L){ var u=(L.close-RP.pos.entry)*RP.pos.side; open=' · open '+(RP.pos.side>0?'CALL':'PUT')+' @'+fmt(RP.pos.entry,1)+' <b class="'+(u>=0?'up':'dn')+'">'+(u>=0?'+':'')+fmt(u,1)+'</b>'; }
+  var where=RP.picking?'<b style="color:var(--warn)">Tap a candle to start from there (or press ▶)</b>':(L?'At '+dmy(L.time)+(S.tf==='1d'?'':' '+hhmm(L.time))+' · '+(RP.full.length-1-RP.idx)+' candles left':'');
+  $('rpInfo').innerHTML=where+'<br>Replay P&L <b class="'+(pnl>=0?'up':'dn')+'">'+(pnl>=0?'+':'')+fmt(pnl,1)+' pts</b> · '+RP.trades.length+' trades, '+w+' won'+open;
+}
+function rpEnter(){
+  if(!bars.length||RP.on) return;
+  RP.on=true; RP.full=bars.slice(); RP.trades=[]; RP.pos=null; RP.marks=[]; RP.picking=true; rpStop(); lastAlertKey={};
+  var n=RP.full.length, i=n-1;
+  if(S.tf!=='1d'){ var ld=dayKey(RP.full[n-1].time); while(i>0 && dayKey(RP.full[i].time)===ld) i--; var pd=dayKey(RP.full[i].time); while(i>0 && dayKey(RP.full[i-1].time)===pd) i--; }
+  else i=Math.max(1,n-60);
+  RP.idx=Math.max(1,i); rpUI();
+  toast('Replay mode: tap any candle on the chart to start from there, or press ▶ to start from the previous day.',6000);
+}
+function rpExit(){
+  rpStop(); RP.on=false; RP.picking=false; RP.pos=null;
+  if(RP.full){ bars=RP.full; RP.full=null; } RP.marks=[]; lastAlertKey={};
+  renderAll(true); chart.timeScale().scrollToRealTime(); rpUI(); lastTick=0;
+}
+function rpStart(i){
+  RP.picking=false; RP.idx=Math.min(Math.max(1,i),RP.full.length-1);
+  bars=RP.full.slice(0,RP.idx+1); lastAlertKey={}; renderAll(true);
+  var n=bars.length; chart.timeScale().setVisibleLogicalRange({from:Math.max(0,n-90),to:n+10});
+  rpUI();
+}
+function rpStep(d){
+  if(!RP.on) return;
+  if(RP.picking){ rpStart(RP.idx); return; }
+  var ni=RP.idx+d;
+  if(ni>=RP.full.length){ rpStop(); rpUI(); toast('Reached the latest candle.',2500); return; }
+  if(ni<1) return;
+  RP.idx=ni;
+  if(d>0){
+    bars.push(RP.full[ni]); updateLast(); renderSignals();
+    var ts=chart.timeScale(), r=ts.getVisibleLogicalRange(), n=bars.length;
+    if(r && r.to<n+2) ts.setVisibleLogicalRange({from:r.from+(n+2-r.to),to:n+2});
+    rpCheckPos();
+  } else {
+    var r2=chart.timeScale().getVisibleLogicalRange(); bars=RP.full.slice(0,RP.idx+1); renderAll(true); if(r2) chart.timeScale().setVisibleLogicalRange(r2);
+  }
+  rpUI();
+}
+function rpStop(){ if(RP.timer){ clearInterval(RP.timer); RP.timer=null; } }
+function rpPlay(){
+  if(!RP.on) return;
+  if(RP.timer){ rpStop(); rpUI(); return; }
+  if(RP.picking) rpStart(RP.idx);
+  var sp=+$('rpSpeed').value||1; RP.timer=setInterval(function(){ rpStep(1); },1000/sp); rpUI();
+}
+function rpTrade(side){
+  if(!RP.on||!bars.length) return;
+  if(RP.picking) rpStart(RP.idx);
+  var b=bars[bars.length-1];
+  if(RP.pos){ if(RP.pos.side===side) return; rpClosePos('Reverse'); }
+  RP.pos={side:side,entry:b.close,t:b.time};
+  RP.marks.push(side>0?{time:b.time,position:'belowBar',color:'#ffd54f',shape:'arrowUp',text:'BUY CALL'}:{time:b.time,position:'aboveBar',color:'#ffd54f',shape:'arrowDown',text:'BUY PUT'});
+  renderSignals(); rpUI();
+}
+function rpClosePos(why,px){
+  if(!RP.pos) return; var b=bars[bars.length-1], ex=(px===undefined?b.close:px), pts=(ex-RP.pos.entry)*RP.pos.side;
+  RP.trades.push({side:RP.pos.side,entry:RP.pos.entry,exit:ex,t:RP.pos.t,te:b.time,pts:pts,why:why||'Manual'});
+  RP.marks.push({time:b.time,position:RP.pos.side>0?'aboveBar':'belowBar',color:pts>0?'#8bc34a':'#ff8a65',shape:'circle',text:(pts>0?'+':'')+fmt(pts,1)});
+  RP.pos=null; renderSignals(); rpUI();
+}
+function rpCheckPos(){
+  if(!RP.pos) return;
+  var sl=+$('rpSL').value||0, tp=+$('rpTP').value||0, b=bars[bars.length-1], s=RP.pos.side, e=RP.pos.entry;
+  if(sl>0 && (s>0? b.low<=e-sl : b.high>=e+sl)){ rpClosePos('SL',e-s*sl); return; }
+  if(tp>0 && (s>0? b.high>=e+tp : b.low<=e-tp)){ rpClosePos('TP',e+s*tp); return; }
+  if(S.tf!=='1d' && modOf(b.time)+TF[S.tf].min>=hm2min('15:15')){ rpClosePos('EOD'); }
+}
+function rpList(){
+  openSheet('Replay trades',function(body){
+    if(!RP.trades.length){ body.appendChild(el('p',{class:'hint'},'No replay trades yet. Use Buy CALL / Buy PUT while replaying.')); return; }
+    var st=btStats(RP.trades.map(function(t){ return {pts:t.pts,why:t.why,t:t.t}; }));
+    body.appendChild(el('div',null,statCards(st)));
+    body.appendChild(el('div',{style:'margin-top:8px;overflow:auto'},'<table><tr><th>Entry</th><th>Side</th><th>In</th><th>Out</th><th>Why</th><th>Pts</th></tr>'+RP.trades.slice().reverse().map(function(t){ return '<tr><td>'+dmy(t.t)+' '+hhmm(t.t)+'</td><td class="'+(t.side>0?'up':'dn')+'">'+(t.side>0?'CALL':'PUT')+'</td><td>'+fmt(t.entry,1)+'</td><td>'+fmt(t.exit,1)+'</td><td>'+t.why+'</td><td class="'+(t.pts>=0?'up':'dn')+'">'+fmt(t.pts,1)+'</td></tr>'; }).join('')+'</table>'));
+    body.appendChild(el('p',{class:'hint'},'Paper trades in index/stock points. Entry and exit at the candle close shown on screen.'));
+  },[{t:'Close',cls:'pri',fn:closeSheet}]);
+}
+$('btnReplay').onclick=function(){ if(RP.on) rpExit(); else rpEnter(); };
+$('rpPick').onclick=function(){ if(!RP.on) return; rpStop(); RP.picking=true; bars=RP.full.slice(); renderAll(true); rpUI(); toast('Tap a candle to restart the replay from there.',3000); };
+$('rpBack').onclick=function(){ rpStop(); rpStep(-1); };
+$('rpFwd').onclick=function(){ rpStop(); rpStep(1); };
+$('rpPlay').onclick=rpPlay;
+$('rpSpeed').onchange=function(){ if(RP.timer){ rpStop(); rpPlay(); } };
+$('rpExit').onclick=rpExit;
+$('rpCall').onclick=function(){ rpTrade(1); };
+$('rpPut').onclick=function(){ rpTrade(-1); };
+$('rpClose').onclick=function(){ rpClosePos('Manual'); };
+$('rpList').onclick=rpList;
+document.addEventListener('keydown',function(e){
+  if(!RP.on || /INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')) return;
+  if(e.key==='ArrowRight'){ rpStop(); rpStep(1); e.preventDefault(); }
+  else if(e.key==='ArrowLeft'){ rpStop(); rpStep(-1); e.preventDefault(); }
+  else if(e.key===' '){ rpPlay(); e.preventDefault(); }
+});
 
 // ---- zoom buttons ----
 function zoom(f){ var ts=chart.timeScale(), r=ts.getVisibleLogicalRange(); if(!r) return; var w=r.to-r.from, nw=Math.max(10,w*f), right=r.to; ts.setVisibleLogicalRange({from:right-nw,to:right}); }
