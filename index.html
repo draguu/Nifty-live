@@ -72,6 +72,10 @@ td:first-child,th:first-child{text-align:left}
 .card.col{padding:8px 10px}.card.col>.chd{margin:0}
 #btBar{position:sticky;bottom:0;z-index:6;display:flex;gap:10px;align-items:center;background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:8px 10px;margin-top:4px;box-shadow:0 -6px 18px #000a}
 #btBar .big{font-size:17px;font-weight:700}
+.sideT{padding:5px 8px;font-weight:700}
+#btOnC.on{background:#26a69a33;border-color:var(--up);color:var(--up)}
+#btOnP.on{background:#ef535033;border-color:var(--dn);color:var(--dn)}
+.sideT:not(.on){opacity:.45;text-decoration:line-through}
 #btBar .sub{font-size:11px;color:var(--mut);line-height:1.35}
 .side{display:grid;grid-template-columns:62px 1fr 1fr 1fr;gap:6px;align-items:end;margin-top:6px}
 .side>b{font-size:12px;padding-bottom:8px}
@@ -205,7 +209,7 @@ td:first-child,th:first-child{text-align:left}
       <p class="hint" style="margin:8px 0 0">Points = price points of the symbol. ₹ uses the Zerodha charges above (CALL = long, PUT = short for futures/equity). History: intraday since Jan 2022, daily 10 years.</p>
     </div>
     <div id="btOut"></div>
-    <div id="btBar"><button class="btn pri sm" id="btRun2">▶ Run</button><div class="grow" id="btBarTxt"><div class="sub">Run a backtest – the result stays here.</div></div></div>
+    <div id="btBar"><button class="btn pri sm" id="btRun2">▶ Run</button><button class="btn sm sideT" id="btOnC">CALL</button><button class="btn sm sideT" id="btOnP">PUT</button><div class="grow" id="btBarTxt"><div class="sub">Run a backtest – the result stays here.</div></div></div>
   </div>
 </section>
 
@@ -580,7 +584,7 @@ function strategySignals(D,s,tfMin){
     if(edge){ okL = okL && !prevL; okS = okS && !prevS; }
     prevL=rawL; prevS=rawS;
     if(intraday){ var m=D.mod[i]+tfMin; if(m<st || m>en) { okL=okS=false; } }
-    if(s.dir==='long') okS=false; if(s.dir==='short') okL=false;
+    if(s.dir==='long') okS=false; if(s.dir==='short') okL=false; if(s.dir==='none') okL=okS=false;
     if(!okL && !okS) continue;
     var side= okL?1:-1; if(okL&&okS) continue; // ambiguous
     out.push({i:i,side:side,stop:stopFor(D,s,i,side,atr)});
@@ -1428,15 +1432,15 @@ function runBt(){
   getBtData(sym,tf,days,btProg(out,'Loading '+symName(sym)+' '+tf)).then(function(Dx){
     if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; }
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
-    var cut=btCut(Dx,days), tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=btCfg(), rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
-    var html='<div class="card" data-k="sum"><h3 class="chd">'+s.name+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade'+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
+    var cut=btCut(Dx,days), tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=btCfg(), rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
+    var html='<div class="card" data-k="sum"><h3 class="chd">'+s.name+sideTag()+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade'+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
     if(rs) html+=rsCard(rs,cfg);
     html+='<div class="card" data-k="eq"><h4 class="chd" style="margin-top:0">Equity curve ('+(rs?'₹ after charges':'points')+')</h4><div id="eq"></div></div>';
     // by month
     var mon={}; tr.forEach(function(t){ if(t.why==='Open'||t.skip) return; var d=new Date(t.t*1000), k=d.getUTCFullYear()+'-'+two(d.getUTCMonth()+1); mon[k]=mon[k]||{n:0,p:0,w:0,r:0}; mon[k].n++; mon[k].p+=t.pts; mon[k].r+=(t.rs||0); if(t.pts>0) mon[k].w++; });
     html+='<div class="card" data-k="mon"><h4 class="chd" style="margin-top:0">By month</h4><div style="max-height:220px;overflow:auto"><table><tr><th>Month</th><th>Trades</th><th>Win%</th><th>Points</th>'+(rs?'<th>₹ net</th>':'')+'</tr>'+Object.keys(mon).sort().reverse().map(function(k){ var m=mon[k]; return '<tr><td>'+k+'</td><td>'+m.n+'</td><td>'+fmt(100*m.w/m.n,0)+'</td><td class="'+(m.p>=0?'up':'dn')+'">'+fmt(m.p,1)+'</td>'+(rs?'<td class="'+(m.r>=0?'up':'dn')+'">'+Math.round(m.r).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
     html+='<div class="card" data-k="trades"><div class="row chd"><h4 class="grow" style="margin:0">Trades ('+tr.length+')</h4><button class="btn sm" id="btShow">Show on chart</button></div><div style="max-height:360px;overflow:auto;margin-top:6px"><table><tr><th>Date</th><th>Side</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>Pts</th>'+(rs?(rs.comp?'<th>Lots</th>':'')+'<th>₹ net</th>'+(rs.comp?'<th>Capital</th>':''):'')+'</tr>'+tr.slice().reverse().map(function(t){ return '<tr><td>'+dmy(t.t)+' '+(tf==='1d'?'':hhmm(t.t))+'</td><td class="'+(t.side>0?'up':'dn')+'">'+(t.side>0?'CALL':'PUT')+'</td><td>'+fmt(t.entry,1)+'</td><td>'+fmt(t.stop,1)+'</td><td>'+fmt(t.tgt,1)+'</td><td>'+fmt(t.exit,1)+'</td><td>'+t.why+'</td><td class="'+(t.pts>=0?'up':'dn')+'">'+fmt(t.pts,1)+'</td>'+(rs?(rs.comp?'<td>'+(t.skip?'–':t.lots)+'</td>':'')+'<td class="'+((t.rs||0)>=0?'up':'dn')+'">'+(t.skip?'skipped':Math.round(t.rs||0).toLocaleString('en-IN'))+'</td>'+(rs.comp?'<td>'+(t.cap!=null&&!t.skip?Math.round(t.cap).toLocaleString('en-IN'):'–')+'</td>':''):'')+'</tr>'; }).join('')+'</table></div></div>';
-    out.innerHTML=html; btCollapse(out); btBarSet(st,rs,s.name+' · '+symName(sym)+' '+tf);
+    out.innerHTML=html; btCollapse(out); btBarSet(st,rs,s.name+' · '+symName(sym)+' '+tf+sideTag());
     // equity chart
     if(eqChart){ try{eqChart.remove();}catch(e){} }
     eqChart=LC.createChart($('eq'),{autoSize:true,layout:{background:{type:'solid',color:'#161a21'},textColor:'#aab2c3',fontSize:10},grid:{vertLines:{visible:false},horzLines:{color:'#232834'}},timeScale:{timeVisible:false,borderColor:'#2c3445'},rightPriceScale:{borderColor:'#2c3445'},handleScroll:true,handleScale:true});
@@ -1453,6 +1457,13 @@ function runBt(){
   }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
 }
 $('btRun').onclick=runBt; $('btRun2').onclick=runBt;
+var btOn={c:true,p:true};
+function btSideUI(){ $('btOnC').classList.toggle('on',btOn.c); $('btOnP').classList.toggle('on',btOn.p); }
+function sideStrat(s){ if(btOn.c&&btOn.p) return s; var c=JSON.parse(JSON.stringify(s)), L=(s.dir||'both')!=='short'&&btOn.c, P=(s.dir||'both')!=='long'&&btOn.p; c.dir=L&&P?'both':L?'long':P?'short':'none'; return c; }
+function sideTag(){ return btOn.c&&btOn.p?'':' <span class="'+(btOn.c?'up':btOn.p?'dn':'')+'">('+(btOn.c?'CALL only':btOn.p?'PUT only':'CALL & PUT off')+')</span>'; }
+$('btOnC').onclick=function(){ btOn.c=!btOn.c; btSideUI(); runBt(); };
+$('btOnP').onclick=function(){ btOn.p=!btOn.p; btSideUI(); runBt(); };
+btSideUI();
 var btWork=null, btDirty=false, btTimer=null;
 var optStop=false;
 function optSpace(base,tf){
@@ -1610,7 +1621,7 @@ $('btAll').onclick=function(){
   out.innerHTML='<div class="card">Running all strategies…</div>';
   getBtData(sym,tf,days,btProg(out,'Running all strategies')).then(function(Dx){
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
-    var cut=btCut(Dx,days), cfg=btCfg(); var rows=S.strats.map(function(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr); var rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null; return {s:s,st:st,rs:rs}; }).sort(function(a,b){ return a.rs&&b.rs? b.rs.net-a.rs.net : b.st.net-a.st.net; });
+    var cut=btCut(Dx,days), cfg=btCfg(); var rows=S.strats.map(function(s){ var tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr); var rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null; return {s:s,st:st,rs:rs}; }).sort(function(a,b){ return a.rs&&b.rs? b.rs.net-a.rs.net : b.st.net-a.st.net; });
     out.innerHTML='<div class="card" data-k="all"><h3 class="chd">All strategies · '+symName(sym)+' '+tf+'</h3><div class="small mut">'+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts'+btSrcNote(Dx,cut,days)+'</div><div style="overflow:auto;margin-top:6px"><table><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net pts</th><th>DD</th>'+(cfg.inst!=='pts'?'<th>₹ net</th><th>₹ charges</th>':'')+'</tr>'+rows.map(function(r){ return '<tr><td>'+r.s.name+'</td><td>'+r.st.n+'</td><td>'+fmt(r.st.win,0)+'</td><td class="'+(r.st.pf>=1?'up':'dn')+'">'+fmt(r.st.pf)+'</td><td class="'+(r.st.net>=0?'up':'dn')+'">'+fmt(r.st.net,0)+'</td><td>'+fmt(r.st.dd,0)+'</td>'+(r.rs?'<td class="'+(r.rs.net>=0?'up':'dn')+'">'+Math.round(r.rs.net).toLocaleString('en-IN')+'</td><td>'+Math.round(r.rs.chg.total).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>'; btCollapse(out); if(rows.length){ var b0=rows[0]; btBarSet(b0.st,b0.rs,'best: '+b0.s.name+' · '+symName(sym)+' '+tf); }
   }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
 };
