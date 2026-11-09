@@ -1520,9 +1520,12 @@ function btOptimize(){
       r.p30=roll30(T.map(function(t){ return {t:t.t,v:money?t.rs:t.pts}; }),a,b); return r; }
     function ev(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=t0 && t.why!=='Open'; });
       if(money) rupeeTrades(tr,cfg);
-      return {A:part(tr.filter(function(t){ return t.t<split; }),mA,t0,split),B:part(tr.filter(function(t){ return t.t>=split; }),mB,split,t1),F:part(tr,mA+mB,t0,t1)}; }
+      var A=part(tr.filter(function(t){ return t.t<split; }),mA,t0,split), L3=(split-t0)/3, mc=Infinity;
+      for(var q=0;q<3;q++){ var a0=t0+q*L3, a1=a0+L3, sm=0; tr.forEach(function(t){ if(t.t>=a0&&t.t<a1) sm+=money?t.rs:t.pts; }); mc=Math.min(mc,sm/(L3/MD)); }
+      A.minChunk=mc;
+      return {A:A,B:part(tr.filter(function(t){ return t.t>=split; }),mB,split,t1),F:part(tr,mA+mB,t0,t1)}; }
     function score(r){ var a=r.A; if(a.n<Math.max(12,mA*0.5) || a.net<=0) return -1e15+a.net;
-      return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : obj==='steady'? Math.round(a.p30)*1e6+a.perMon : a.perMon; }
+      return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : obj==='steady'? a.minChunk : a.perMon; }
     var sides=[['long','CALL'],['short','PUT']], res={}, si=0, runs=0, P=optSpace(base,tf), pass=0, pi=0, vi=0, cur, curR, curS;
     function startSide(){ cur=JSON.parse(JSON.stringify(sideS(base,si===0?1:-1))); delete cur.sides; cur.dir=sides[si][0]; cur.name=base.name+' · '+sides[si][1]+' best'; curR=ev(cur); curS=score(curR); runs++; pass=0; pi=0; vi=0; }
     startSide();
@@ -1554,7 +1557,7 @@ function btOptimize(){
         var ix=S.strats.indexOf(orig); S.strats[ix]=nw; btWork=null; btDirty=false; save(); try{ renderSignals(); }catch(e){} applied=true;
       }
       var h='<div class="card" data-k="opt"><h3 class="chd">'+(applied?'✅ Best settings applied':'🔍 Best settings')+' · '+symName(sym)+' '+tf+'</h3>'+
-        '<div class="small mut">Goal: '+({steady:'positive in most 30-day stretches',net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+' · '+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
+        '<div class="small mut">Goal: '+({steady:'steady (best worst-stretch)',net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+' · '+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
       ['long','short'].forEach(function(k){ var x=res[k]; if(!x) return; var nm=k==='long'?'CALL':'PUT', g=k==='long'?gL:gS;
         h+='<h4 class="'+(k==='long'?'up':'dn')+'" style="margin-top:12px">'+nm+(applied?(g?' – applied':' – switched OFF (lost money on the check period)'):'')+(x.partial?' (stopped early)':'')+'</h4>';
         h+='<p class="hint" style="margin:0 0 6px">'+optDesc(x.s,tf)+'</p><div style="overflow:auto"><table><tr><th></th><th>Trades/mo</th><th>Wins/mo</th><th>Win%</th><th>PF</th><th>Net/mo</th><th>+ in 30 days</th></tr>'+
@@ -1631,7 +1634,7 @@ function btQuick(){
   };
   r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
   var r7=el('div',{class:'row',style:'margin-top:8px;align-items:flex-end'});
-  var ob=sel([['steady','Profitable in most 30-day stretches'],['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'steady',function(v){ S.optObj=v; save(); });
+  var ob=sel([['steady','Steady – best worst-stretch profit'],['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'steady',function(v){ S.optObj=v; save(); });
   r7.appendChild(field('Find best settings for',ob));
   var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✨ Find & apply best CALL + PUT settings'); bo.onclick=btOptimize; r7.appendChild(bo);
   d.appendChild(r7);
