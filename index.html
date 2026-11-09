@@ -690,7 +690,7 @@ function tick(){
     setStatus((marketOpen()?'live':'market closed')+' · '+new Date().toLocaleTimeString());
   }).catch(function(e){ setStatus('retrying… ('+e.message+')'); }).then(function(){ if(tok===loadToken) busy=false; else busy=false; });
 }
-setInterval(tick,250);
+setInterval(function(){ tick(); try{ var vr=chart&&chart.timeScale().getVisibleLogicalRange(); if(vr&&vr.from<15) loadOlder(); }catch(e){} },250);
 document.addEventListener('visibilitychange',function(){ if(!document.hidden){ lastTick=0; } });
 
 // ---- zoom buttons ----
