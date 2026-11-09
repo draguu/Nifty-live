@@ -170,7 +170,8 @@ td:first-child,th:first-child{text-align:left}
         <label class="lbl">Timeframe<select id="btTf"></select></label>
         <label class="lbl">Period<select id="btDays">
           <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 3 months</option>
-          <option value="180">Last 6 months</option><option value="365" selected>Last 1 year (max intraday)</option><option value="1825">5 years (daily only)</option></select></label>
+          <option value="180">Last 6 months</option><option value="365" selected>Last 1 year</option><option value="1095">Last 3 years</option><option value="1825">Last 5 years</option><option value="3650">Last 10 years (daily only)</option></select></label>
+        <span class="hint" style="align-self:center">Long history comes from Upstox's free data: intraday since Jan 2022, daily since 2010+.</span>
         <label class="lbl">Slippage per trade (points)<input id="btCost" type="number" step="any" value="2"></label>
       </div>
       <div class="row" style="margin-top:6px">
@@ -180,7 +181,7 @@ td:first-child,th:first-child{text-align:left}
         <label class="lbl" id="btDeltaL">Option delta<input id="btDelta" type="number" step="0.05" value="0.5"></label>
       </div>
       <div class="row" id="btCompRow" style="margin-top:6px;align-items:flex-end">
-        <label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btComp" type="checkbox" style="width:auto"> Add 1 lot when profit can buy another lot</label>
+        <label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btComp" type="checkbox" style="width:auto"> Add 1 lot when profit can buy 2 more lots</label>
         <label class="lbl" id="btCapL">Starting capital ₹<input id="btCap" type="number" step="any" value="15000"></label>
         <label class="lbl" id="btMarginL">Margin per futures lot ₹<input id="btMargin" type="number" step="any" value="150000"></label>
       </div>
@@ -637,7 +638,7 @@ var $ = function(id){ return document.getElementById(id); };
 var LS='nlc_v3';
 
 // ---------------- state ----------------
-var SYMS=[['Nifty 50','idx:in;NSX'],['Bank Nifty','idx:in;nbx'],['Sensex','idx:in;SEN'],['Reliance','RELIANCE'],['HDFC Bank','HDFCBANK'],['ICICI Bank','ICICIBANK'],['TCS','TCS'],['Infosys','INFY'],['SBI','SBIN'],['Axis Bank','AXISBANK'],['Kotak Bank','KOTAKBANK'],['L&T','LT'],['Bharti Airtel','BHARTIARTL'],['ITC','ITC'],['Bajaj Finance','BAJFINANCE'],['Tata Motors','TATAMOTORS'],['Maruti','MARUTI']];
+var SYMS=[['Nifty 50','idx:in;NSX'],['Bank Nifty','idx:in;nbx'],['Sensex','idx:in;SEN'],['Reliance','RELIANCE'],['HDFC Bank','HDFCBANK'],['ICICI Bank','ICICIBANK'],['TCS','TCS'],['Infosys','INFY'],['SBI','SBIN'],['Axis Bank','AXISBANK'],['Kotak Bank','KOTAKBANK'],['L&T','LT'],['Bharti Airtel','BHARTIARTL'],['ITC','ITC'],['Bajaj Finance','BAJFINANCE'],['Tata Motors PV','TMPV'],['Maruti','MARUTI']];
 var uid=function(){ return Math.random().toString(36).slice(2,9); };
 function presets(){
   return [
@@ -685,6 +686,34 @@ function fetchJSON(url,ms){
 function mcURL(sym,tf,from,to,cb){
   var kind='stock', s=sym.trim(); if(s.indexOf('idx:')===0){ kind='index'; s=s.slice(4); } else s=s.toUpperCase().replace(/\.NS$/,'');
   return 'https://priceapi.moneycontrol.com/techCharts/indianMarket/'+kind+'/history?symbol='+encodeURIComponent(s)+'&resolution='+TF[tf].res+'&from='+from+'&to='+to+'&countback='+cb+'&currencyCode=INR';
+}
+var UPX_ISIN={RELIANCE:'INE002A01018',HDFCBANK:'INE040A01034',ICICIBANK:'INE090A01021',TCS:'INE467B01029',INFY:'INE009A01021',SBIN:'INE062A01020',AXISBANK:'INE238A01034',KOTAKBANK:'INE237A01036',LT:'INE018A01030',BHARTIARTL:'INE397D01024',ITC:'INE154A01025',BAJFINANCE:'INE296A01032',TMPV:'INE155A01022',TATAMOTORS:'INE155A01022',MARUTI:'INE585B01010'};
+var UPX_START='2022-01-01';
+function upxKey(sym){ if(sym==='idx:in;NSX') return 'NSE_INDEX|Nifty 50'; if(sym==='idx:in;nbx') return 'NSE_INDEX|Nifty Bank'; if(sym==='idx:in;SEN') return 'BSE_INDEX|SENSEX'; if(sym.indexOf('idx:')===0) return null; var s=sym.trim().toUpperCase().replace(/\.NS$/,''); return UPX_ISIN[s]?'NSE_EQ|'+UPX_ISIN[s]:null; }
+function upxUnit(tf){ return {'1m':'minutes/1','5m':'minutes/5','15m':'minutes/15','30m':'minutes/30','60m':'hours/1','1d':'days/1'}[tf]; }
+function istDate(ms){ return new Date(ms+IST*1000).toISOString().slice(0,10); }
+function addDays(d,n){ return new Date(Date.parse(d+'T00:00:00Z')+n*86400000).toISOString().slice(0,10); }
+function upxGet(url){ var tries=0; return (function go(){ return fetchJSON(url,20000).then(function(j){ if(!j||j.status!=='success') throw new Error('Upstox: '+((j&&j.errors&&j.errors[0]&&j.errors[0].message)||'bad reply')); return (j.data&&j.data.candles)||[]; }).catch(function(e){ if(++tries<3) return new Promise(function(r){ setTimeout(r,800*tries); }).then(go); throw e; }); })(); }
+function fetchUpstox(sym,tf,days,prog){
+  var key=encodeURIComponent(upxKey(sym)), unit=upxUnit(tf), today=istDate(Date.now()), warm=tf==='1d'?400:45;
+  var start=istDate(Date.now()-(days+warm)*86400000); if(tf!=='1d' && start<UPX_START) start=UPX_START;
+  var ranges=[], cur=start;
+  while(cur<=today){ var to;
+    if(tf==='1d') to=addDays(cur,9*365);
+    else { var y=+cur.slice(0,4), m=+cur.slice(5,7); to=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10); }
+    if(to>today) to=today; ranges.push([cur,to]); cur=addDays(to,1); }
+  var base='https://api.upstox.com/v3/historical-candle/', parts=new Array(ranges.length), idx=0, done=0;
+  function worker(){ if(idx>=ranges.length) return Promise.resolve(); var k=idx++, r=ranges[k];
+    return upxGet(base+key+'/'+unit+'/'+r[1]+'/'+r[0]).then(function(c){ parts[k]=c; done++; if(prog) prog(done,ranges.length); return worker(); }); }
+  var ws=[]; for(var w=0;w<Math.min(5,ranges.length);w++) ws.push(worker());
+  return Promise.all(ws).then(function(){
+    return upxGet(base+'intraday/'+key+'/'+unit).catch(function(){ return []; });
+  }).then(function(live){
+    var all=[]; parts.forEach(function(c){ for(var i=0;i<c.length;i++) all.push(c[i]); }); for(var i=0;i<live.length;i++) all.push(live[i]);
+    var rows=all.map(function(c,i){ return {t:Math.floor(Date.parse(c[0])/1000),c:c,i:i}; }).sort(function(a,b){ return a.t-b.t||a.i-b.i; });
+    var j={t:[],o:[],h:[],l:[],c:[],v:[]}; rows.forEach(function(r){ j.t.push(r.t); j.o.push(r.c[1]); j.h.push(r.c[2]); j.l.push(r.c[3]); j.c.push(r.c[4]); j.v.push(r.c[5]||0); });
+    return shapeBars(j,tf);
+  });
 }
 function fetchBars(sym,tf,opt){
   opt=opt||{}; var to=opt.to||Math.floor(Date.now()/1000)+120, from=opt.from||(to-(opt.days||3650)*86400);
@@ -1308,7 +1337,7 @@ function rupeeTrades(tr,cfg){
     if(cfg.comp){ var lc=lotCost(cfg,t);
       if(bust || cap<lc){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; }
       if(cap<lots*lc){ lots=Math.max(1,Math.floor(cap/lc)); downs++; }
-      else if(cap>=(lots+1)*lc){ lots++; ups++; }
+      else if(cap>=(lots+2)*lc){ lots++; ups++; }
       if(lots>maxLots) maxLots=lots; t.lots=lots; }
     var q=cfg.qty*t.lots, buy, sell, gross;
     if(cfg.inst==='opt'){ var P=cfg.prem, out=Math.max(0.05,P+t.pts*cfg.delta); buy=P*q; sell=out*q; gross=sell-buy; }
@@ -1325,17 +1354,21 @@ function rsCard(rs,cfg){
     c('Win rate after charges',fmt(rs.win,1)+'%')+c('Profit factor',fmt(rs.pf),rs.pf>=1?'up':'dn')+c('Max drawdown',R(rs.dd),'dn')+
     c('Avg net / trade',R(rs.exp),rs.exp>=0?'up':'dn')+c('Charges / trade',R(rs.n?rs.chg.total/rs.n:0))+c('Avg win / loss',R(rs.avgW)+' / '+R(rs.avgL))+'</div>'+
     (rs.comp?'<h4 style="margin:10px 0 4px">Lot compounding</h4><div class="stats">'+c('Starting capital',R(rs.comp.start))+c('Final capital',R(rs.comp.end),rs.comp.end>=rs.comp.start?'up':'dn')+c('Return',fmt(rs.comp.start?100*(rs.comp.end-rs.comp.start)/rs.comp.start:0,1)+'%',rs.comp.end>=rs.comp.start?'up':'dn')+c('Lots now',rs.comp.lots)+c('Max lots',rs.comp.maxLots)+c('Lots added / cut',rs.comp.ups+' / '+rs.comp.downs)+'</div>'+
-      '<p class="hint" style="margin:6px 0 0">Starts with 1 lot. Before each trade, if capital can pay for one more lot (lot cost '+(cfg.inst==='opt'?'= premium × qty = '+R(cfg.prem*cfg.qty):cfg.inst==='fut'?'= margin '+R(cfg.margin):'= entry price × qty')+'), 1 lot is added. If losses mean capital can no longer pay for the current lots, lots are reduced to what it can pay for.'+(rs.comp.bust?' <b class="dn">Capital fell below 1 lot on '+dmy(rs.comp.bust)+' – '+rs.comp.skipped+' later trades skipped.</b>':'')+'</p>':'')+
+      '<p class="hint" style="margin:6px 0 0">Starts with 1 lot. Before each trade, if capital can pay for 2 more lots on top of the lots in use (lot cost '+(cfg.inst==='opt'?'= premium × qty = '+R(cfg.prem*cfg.qty):cfg.inst==='fut'?'= margin '+R(cfg.margin):'= entry price × qty')+'), 1 lot is added (so 1 spare lot of money always stays in hand). If losses mean capital can no longer pay for the current lots, lots are reduced to what it can pay for.'+(rs.comp.bust?' <b class="dn">Capital fell below 1 lot on '+dmy(rs.comp.bust)+' – '+rs.comp.skipped+' later trades skipped.</b>':'')+'</p>':'')+
     '<p class="hint" style="margin:8px 0 0">Charges: brokerage '+R(rs.chg.brok)+' · STT '+R(rs.chg.stt)+' · exchange '+R(rs.chg.tx)+' · stamp '+R(rs.chg.stamp)+' · GST '+R(rs.chg.gst)+' · SEBI '+R(rs.chg.sebi)+'.'+(cfg.inst==='opt'?' Option P&L is estimated as index points × delta (no time decay / IV change), so treat it as optimistic.':'')+'</p></div>';
 }
 var dataCache={};
 function btCut(Dx,days){ var c=Math.floor((nowIST()-days*86400)/86400)*86400, i=0; while(i<Dx.n-1&&Dx.t[i]<c) i++; return {c:c,i:i}; }
-function getBtData(sym,tf,days){
-  var key=sym+'|'+tf, c=dataCache[key];
+function getBtData(sym,tf,days,prog){
+  var up=!!upxKey(sym), key=sym+'|'+tf+'|'+(up?days:'mc'), c=dataCache[key];
   if(c && Date.now()-c.at<5*60000) return Promise.resolve(c.D);
   var cb= tf==='1d'?5000:30000;
-  return fetchBars(sym,tf,{days:tf==='1d'?7300:400,cb:cb}).then(function(b){ var Dx=cols(b); dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
+  function mc(){ return fetchBars(sym,tf,{days:tf==='1d'?7300:400,cb:cb}).then(function(b){ return {b:b,src:'Moneycontrol'}; }); }
+  var p= up ? fetchUpstox(sym,tf,days,prog).then(function(b){ if(b.length<50) throw new Error('too little Upstox data'); return {b:b,src:'Upstox'}; }).catch(function(e){ console.warn('Upstox failed, using Moneycontrol',e); return mc(); }) : mc();
+  return p.then(function(r){ var Dx=cols(r.b); Dx.src=r.src; dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
 }
+function btProg(out,label){ return function(d,n){ out.innerHTML='<div class="card">'+label+' – downloading history '+d+' / '+n+'…</div>'; }; }
+function btSrcNote(Dx,cut,days){ var short=Dx.t[cut.i]>cut.c+7*86400; return ' · data: '+Dx.src+(short?' <span style="color:var(--warn)">(only available from '+dmy(Dx.t[cut.i])+')</span>':''); }
 function statCards(st){
   var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; };
   return '<div class="stats">'+c('Trades',st.n)+c('Win rate',fmt(st.win,1)+'%')+c('Profit factor',fmt(st.pf),st.pf>=1?'up':'dn')+c('Net points',fmt(st.net,1),st.net>=0?'up':'dn')+c('Avg win / loss',fmt(st.avgW,1)+' / '+fmt(st.avgL,1))+c('Per trade',fmt(st.exp,2),st.exp>=0?'up':'dn')+c('Max drawdown',fmt(st.dd,1)+' pts','dn')+c('Losing streak',st.maxL)+c('Trades / month',fmt(st.perMonth,1))+'</div>';
@@ -1343,13 +1376,12 @@ function statCards(st){
 function runBt(){
   var s=(btWork&&btWork.id===$('btStrat').value)?btWork:S.strats.find(function(x){return x.id===$('btStrat').value;}); if(!s){ toast('Create a strategy first',3000); return; }
   var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0;
-  if(tf!=='1d' && days>365) days=365;
   var out=$('btOut'); out.innerHTML='<div class="card">Loading '+symName(sym)+' '+tf+' data…</div>';
-  getBtData(sym,tf,days).then(function(Dx){
+  getBtData(sym,tf,days,btProg(out,'Loading '+symName(sym)+' '+tf)).then(function(Dx){
     if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; }
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
     var cut=btCut(Dx,days), tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=btCfg(), rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
-    var html='<div class="card"><h3>'+s.name+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade</div>'+statCards(st)+'</div>';
+    var html='<div class="card"><h3>'+s.name+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade'+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
     if(rs) html+=rsCard(rs,cfg);
     html+='<div class="card"><h4 style="margin-top:0">Equity curve ('+(rs?'₹ after charges':'points')+')</h4><div id="eq"></div></div>';
     // by month
@@ -1431,12 +1463,12 @@ function btQuick(){
 $('btStrat').onchange=function(){ btWork=null; btDirty=false; btQuick(); };
 $('btnTemp').onclick=function(){ chartTemp=null; renderSignals(); toast('Test strategy removed from chart',2000); };
 $('btAll').onclick=function(){
-  var sym=$('btSym').value, tf=$('btTf').value, days=Math.min(+$('btDays').value, tf==='1d'?99999:365), cost=+$('btCost').value||0, out=$('btOut');
+  var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut');
   out.innerHTML='<div class="card">Running all strategies…</div>';
-  getBtData(sym,tf,days).then(function(Dx){
+  getBtData(sym,tf,days,btProg(out,'Running all strategies')).then(function(Dx){
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
     var cut=btCut(Dx,days), cfg=btCfg(); var rows=S.strats.map(function(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr); var rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null; return {s:s,st:st,rs:rs}; }).sort(function(a,b){ return a.rs&&b.rs? b.rs.net-a.rs.net : b.st.net-a.st.net; });
-    out.innerHTML='<div class="card"><h3>All strategies · '+symName(sym)+' '+tf+'</h3><div class="small mut">'+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts</div><div style="overflow:auto;margin-top:6px"><table><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net pts</th><th>DD</th>'+(cfg.inst!=='pts'?'<th>₹ net</th><th>₹ charges</th>':'')+'</tr>'+rows.map(function(r){ return '<tr><td>'+r.s.name+'</td><td>'+r.st.n+'</td><td>'+fmt(r.st.win,0)+'</td><td class="'+(r.st.pf>=1?'up':'dn')+'">'+fmt(r.st.pf)+'</td><td class="'+(r.st.net>=0?'up':'dn')+'">'+fmt(r.st.net,0)+'</td><td>'+fmt(r.st.dd,0)+'</td>'+(r.rs?'<td class="'+(r.rs.net>=0?'up':'dn')+'">'+Math.round(r.rs.net).toLocaleString('en-IN')+'</td><td>'+Math.round(r.rs.chg.total).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
+    out.innerHTML='<div class="card"><h3>All strategies · '+symName(sym)+' '+tf+'</h3><div class="small mut">'+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts'+btSrcNote(Dx,cut,days)+'</div><div style="overflow:auto;margin-top:6px"><table><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net pts</th><th>DD</th>'+(cfg.inst!=='pts'?'<th>₹ net</th><th>₹ charges</th>':'')+'</tr>'+rows.map(function(r){ return '<tr><td>'+r.s.name+'</td><td>'+r.st.n+'</td><td>'+fmt(r.st.win,0)+'</td><td class="'+(r.st.pf>=1?'up':'dn')+'">'+fmt(r.st.pf)+'</td><td class="'+(r.st.net>=0?'up':'dn')+'">'+fmt(r.st.net,0)+'</td><td>'+fmt(r.st.dd,0)+'</td>'+(r.rs?'<td class="'+(r.rs.net>=0?'up':'dn')+'">'+Math.round(r.rs.net).toLocaleString('en-IN')+'</td><td>'+Math.round(r.rs.chg.total).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
   }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
 };
 
