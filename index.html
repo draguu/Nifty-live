@@ -124,6 +124,11 @@ td:first-child,th:first-child{text-align:left}
 .side>b{font-size:12px;padding-bottom:8px}
 .side .lbl{min-width:0}
 .stat{background:var(--bg3);border-radius:8px;padding:7px}
+.ppS{display:flex;flex-direction:column;gap:2px;max-height:210px;overflow:auto;background:var(--bg3);border-radius:8px;padding:6px 8px}
+.ppS label{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}.ppS input{width:auto}
+.ppLive{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(38,166,154,.15);color:var(--up)}
+.ppLive i{width:7px;height:7px;border-radius:50%;background:var(--up);animation:ppb 1.4s infinite}@keyframes ppb{50%{opacity:.25}}
+.ppOpen{border-left:3px solid var(--acc)}
 .stat div{font-size:11px;color:var(--mut)}
 .stat b{font-size:15px}
 #eq{height:200px;position:relative}
@@ -332,6 +337,11 @@ details>summary{cursor:pointer}
   </div>
 </section>
 
+<!-- ============ PAPER ============ -->
+<section class="view" id="v-paper">
+  <div class="scroll" id="ppBox"></div>
+</section>
+
 <!-- ============ SETTINGS ============ -->
 <section class="view" id="v-set">
   <div class="scroll">
@@ -367,6 +377,7 @@ details>summary{cursor:pointer}
   <button data-v="chart" class="on"><b><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/></svg></b>Chart</button>
   <button data-v="strats"><b><svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></b>Strategies</button>
   <button data-v="bt"><b><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg></b>Backtest</button>
+  <button data-v="paper"><b><svg viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="13" rx="2"/><path d="M3.5 10h17M8 6V4.5h8V6M15 14.5h2"/></svg></b>Paper</button>
   <button data-v="set"><b><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></b>Settings</button>
 </nav>
 </div>
@@ -2147,11 +2158,119 @@ $('impDo').onclick=function(){ try{ var j=JSON.parse($('impTxt').value); if(j.st
 $('resetBtn').onclick=function(){ if(this.dataset.c){ S=defaults(); save(); location.reload(); } else { this.dataset.c=1; this.textContent='Tap again to confirm reset'; } };
 
 // ---------------- tabs ----------------
+
+// ---------------- paper trading ----------------
+// Replays the real market candles from the moment paper trading was started, so the result is the same
+// whether the app stayed open or not (signals use closed candles; entry = next candle open, same as backtest).
+var PP={bars:null,key:'',res:null,busy:false,err:'',at:0};
+function ppCfg(){ var c=btCfg(); return {inst:c.inst==='pts'?'opt':c.inst,exp:c.exp,theta:c.theta,call:c.call,put:c.put,margin:c.margin}; }
+function ppStart(){
+  var amt=+$('ppAmt').value||0, ids=Array.prototype.filter.call(document.querySelectorAll('#ppStrats input'),function(x){ return x.checked; }).map(function(x){ return x.value; });
+  if(amt<=0){ toast('Enter the amount you want to paper trade with',3000); return; }
+  if(!ids.length){ toast('Pick at least one strategy',3000); return; }
+  var strats=ids.map(function(id){ var x=S.strats.find(function(y){ return y.id===id; }); var c=JSON.parse(JSON.stringify(x)); c.color=stratColor(x); return c; });
+  var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||100;
+  cfg.call.qty=cfg.put.qty=q; cfg.call.prem=cfg.put.prem=pr; cfg.exp=$('ppExp').value;
+  S.paper={on:true,start:nowIST(),sym:$('ppSym').value,tf:$('ppTf').value,cost:+$('btCost').value||0,amt:amt,cfg:cfg,strats:strats,seen:null};
+  save(); PP.bars=null; PP.res=null; ppRender(); ppRun(true);
+}
+function ppStop(){ var P=S.paper; if(!P) return; P.on=false; P.stopAt=nowIST(); save(); ppRender(); }
+function ppMerge(old,nw){ if(!old||!old.length) return nw; if(!nw.length) return old; var t0=nw[0].time, i=old.length; while(i>0&&old[i-1].time>=t0) i--; return old.slice(0,i).concat(nw); }
+function ppRun(force){
+  var P=S.paper; if(!P||PP.busy) return; if(!P.on && PP.res && !force) return;
+  var key=P.sym+'|'+P.tf+'|'+P.start, tfMin=TF[P.tf].min, end=P.on?nowIST():P.stopAt;
+  var warm=P.tf==='1d'?400:45, since=Math.max(1,Math.ceil((nowIST()-P.start)/86400));
+  var fetchDays=(PP.key===key&&PP.bars&&PP.bars.length)?2:since+warm;
+  PP.busy=true;
+  fetchBars(P.sym,P.tf,{days:fetchDays,cb:30000}).then(function(b){
+    PP.bars=(PP.key===key)?ppMerge(PP.bars,b):b; PP.key=key; PP.err='';
+    var bars=PP.bars.filter(function(x){ return x.time<=end; }); if(!bars.length){ PP.res=null; return; }
+    var Dx=cols(bars), lc=Dx.n-1; if(P.tf!=='1d' && end<Dx.t[lc]+tfMin*60) lc--;
+    var all=[]; P.strats.forEach(function(st,si){
+      backtest(Dx,st,tfMin,P.cost,lc).forEach(function(t){ if(Dx.t[t.sigI]+tfMin*60<=P.start) return; t.sn=st.name; t.col=st.color; t.si=si; all.push(t); }); });
+    all.sort(function(a,b){ return a.t-b.t||a.si-b.si; });
+    var cfg=JSON.parse(JSON.stringify(P.cfg)), rs=rupeeTrades(all,cfg), last=Dx.c[Dx.n-1];
+    all.forEach(function(t){ if(t.why!=='Open') return; var sc=t.side>0?cfg.call:cfg.put, pts=(last-t.entry)*t.side; t.livePts=pts;
+      if(cfg.inst==='opt') t.liveRs=pts*sc.delta*sc.qty; else t.liveRs=pts*sc.qty; });
+    PP.res={tr:all,rs:rs,last:last,lastT:Dx.t[Dx.n-1],D:Dx};
+    // alerts for new entries / exits while the app is open
+    var sig=all.map(function(t){ return t.t+':'+t.si+':'+t.why; }).join('|');
+    if(P.seen!=null && P.seen!==sig){ var prev=P.seen.split('|'), nt=all.filter(function(t){ return prev.indexOf(t.t+':'+t.si+':'+t.why)<0; });
+      if(nt.length){ var t=nt[nt.length-1], cp=t.side>0?'CALL':'PUT';
+        toast('📄 Paper: '+(t.why==='Open'?'<b>'+cp+' entry</b> @ '+fmt(t.entry,1):'<b>'+cp+' exit</b> ('+t.why+') '+(t.rs>=0?'+₹':'-₹')+Math.abs(Math.round(t.rs)).toLocaleString('en-IN'))+' · '+t.sn,6000); alertFx(); } }
+    if(P.seen!==sig){ P.seen=sig; save(); }
+  }).catch(function(e){ PP.err=e.message||String(e); }).then(function(){ PP.busy=false; PP.at=Date.now(); if($('v-paper').classList.contains('on')) ppRender(); });
+}
+function ppRender(){
+  var box=$('ppBox'), P=S.paper, R=function(x){ return (x<0?'-':'')+'₹'+Math.abs(Math.round(x)).toLocaleString('en-IN'); }, ud=function(x){ return x>=0?'up':'dn'; };
+  var dt=function(t){ return dmy(t)+' '+hhmm(t); };
+  if(!P){
+    box.innerHTML='<div class="card"><h3 style="margin-top:0">Paper trading</h3>'+
+      '<p class="hint" style="margin-top:0">Trades the strategies you pick on the real market, from the moment you press Start, with pretend money. You don’t need to keep this tab or the app open – every time you open the app it catches up on the day’s candles and shows exactly what would have happened.</p>'+
+      '<div class="row"><label class="lbl">Amount ₹<input id="ppAmt" type="number" step="any" value="'+(S.ppAmt||25000)+'"></label>'+
+      '<label class="lbl">Symbol<select id="ppSym"></select></label><label class="lbl">Timeframe<select id="ppTf"></select></label></div>'+
+      '<div class="lbl" style="margin-top:8px">Strategies</div><div class="ppS" id="ppStrats"></div>'+
+      '<div class="row" style="margin-top:8px"><label class="lbl">Qty per trade<input id="ppQty" type="number" step="1"></label><label class="lbl" id="ppPremL">Option premium ₹ (approx)<input id="ppPrem" type="number" step="any"></label></div>'+
+      '<div class="row" id="ppExpR" style="margin-top:6px"><label class="lbl">Option expiry<select id="ppExp"><option value="cur">This week (fast decay on expiry day)</option><option value="next">Next week (slower decay)</option></select></label></div>'+
+      '<label class="chk" style="margin-top:8px"><input type="checkbox" id="ppComp" checked> Add 1 lot when profit can buy 2 more lots</label>'+
+      '<p class="hint" id="ppSize"></p><button class="btn pri" style="width:100%" id="ppGo">▶ Start paper trading</button></div>';
+    fillSym($('ppSym'),S.sym); Object.keys(TF).forEach(function(tf){ $('ppTf').appendChild(el('option',{value:tf},tf)); }); $('ppTf').value=S.tf;
+    S.strats.forEach(function(st){ var l=el('label',{},'<input type="checkbox" value="'+st.id+'"'+(st.onChart?' checked':'')+'><span style="color:'+stratColor(st)+'">●</span> '+st.name); $('ppStrats').appendChild(l); });
+    var c=ppCfg(); $('ppQty').value=S.ppQty||c.call.qty; $('ppPrem').value=S.ppPrem||c.call.prem; $('ppPremL').style.display=$('ppExpR').style.display=c.inst==='opt'?'':'none'; $('ppExp').value=S.ppExp||c.exp; $('ppExp').onchange=function(){ S.ppExp=this.value; save(); };
+    var hint=function(){ var amt=+$('ppAmt').value||0, q=+$('ppQty').value||0, pr=+$('ppPrem').value||0, lc=c.inst==='opt'?q*pr:c.inst==='fut'?c.margin:0, n=lc?Math.floor(amt/lc):0;
+      $('ppSize').innerHTML=(lc?'1 lot ≈ '+R(lc)+' → your amount covers <b class="'+(n?'up':'dn')+'">'+n+' lot'+(n===1?'':'s')+'</b>'+(n?'':' – raise the amount or lower the qty')+'. ':'')+
+        ({opt:'Options (buy CE / PE)',fut:'Futures',eq:'Equity'})[c.inst]+' with Zerodha charges, as set in Backtest → Charges &amp; size. Trades start from the next candle close after you press Start.'; $('ppGo').disabled=!!lc&&!n; };
+    $('ppAmt').oninput=$('ppQty').oninput=$('ppPrem').oninput=hint; hint();
+    $('ppAmt').onchange=function(){ S.ppAmt=+this.value; save(); }; $('ppQty').onchange=function(){ S.ppQty=+this.value; save(); }; $('ppPrem').onchange=function(){ S.ppPrem=+this.value; save(); };
+    $('ppGo').onclick=ppStart; return;
+  }
+  var r=PP.res, rs=r&&r.rs, tr=r?r.tr:[], cfg=P.cfg;
+  var h='<div class="card"><div class="row" style="align-items:center"><h3 class="grow" style="margin:0">Paper trading</h3>'+(P.on?'<span class="ppLive"><i></i>running</span>':'<span class="mut small">stopped '+dt(P.stopAt)+'</span>')+'</div>'+
+    '<div class="small mut" style="margin:4px 0 8px">'+symName(P.sym)+' · '+P.tf+' · since '+dt(P.start)+' · '+P.strats.map(function(x){ return '<span style="color:'+x.color+'">● '+x.name+'</span>'; }).join(', ')+'</div>';
+  if(PP.err) h+='<p class="dn small">Couldn’t get market data ('+PP.err+'). Retrying…</p>';
+  if(!r){ h+='<p class="mut">'+(PP.busy||!PP.at?'Loading market candles…':'No candles since start yet – waiting for the market.')+'</p></div>'; }
+  else {
+    var closed=tr.filter(function(t){ return t.why!=='Open'&&!t.skip; }), open=tr.filter(function(t){ return t.why==='Open'; });
+    var capNow=rs.comp?rs.comp.end:P.amt+rs.net, liveRs=open.reduce(function(a,t){ return a+(t.liveRs||0); },0);
+    var today=Math.floor(r.lastT/86400), tdy=closed.filter(function(t){ return Math.floor(t.t/86400)===today; }), tdyNet=tdy.reduce(function(a,t){ return a+t.rs; },0);
+    var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; };
+    h+='<div class="stats">'+c('Capital now',R(capNow),ud(capNow-P.amt))+c('Net P&amp;L',R(capNow-P.amt),ud(capNow-P.amt))+c('Return',fmt(100*(capNow-P.amt)/P.amt,1)+'%',ud(capNow-P.amt))+
+      c('Today',R(tdyNet)+' · '+tdy.length,ud(tdyNet))+c('Trades',closed.length)+c('Win rate',closed.length?fmt(rs.win,0)+'%':'--')+'</div>';
+    h+='<div class="small mut" style="margin-top:6px">Last candle '+dt(r.lastT)+' · '+symName(P.sym)+' '+fmt(r.last,2)+(P.on?' · updates every 30 s while the app is open':'')+'</div>';
+    if(rs.comp&&rs.comp.bust) h+='<p class="dn small">Capital fell below the cost of 1 lot on '+dt(rs.comp.bust)+' – no more trades taken.</p>';
+    h+='</div>';
+    open.forEach(function(t){ var cp=t.side>0?'CALL':'PUT';
+      h+='<div class="card ppOpen"><div class="row"><b class="grow '+(t.side>0?'up':'dn')+'">Open '+cp+' · <span style="color:'+t.col+'">'+t.sn+'</span></b><b class="'+ud(t.liveRs)+'">'+R(t.liveRs)+'</b></div>'+
+        '<div class="small mut">Entry '+fmt(t.entry,1)+' at '+hhmm(t.t)+' · SL '+fmt(t.stop,1)+(isNaN(t.tgt)?'':' · Target '+fmt(t.tgt,1))+' · now '+fmt(r.last,1)+' ('+(t.livePts>=0?'+':'')+fmt(t.livePts,1)+' pts)</div></div>'; });
+    // by day
+    var days={}; closed.forEach(function(t){ var k=Math.floor(t.t/86400); days[k]=days[k]||{n:0,w:0,r:0}; days[k].n++; days[k].r+=t.rs; if(t.rs>0) days[k].w++; });
+    var dk=Object.keys(days).sort().reverse();
+    if(dk.length) h+='<div class="card"><h4 style="margin-top:0">By day</h4><table><tr><th>Day</th><th>Trades</th><th>Won</th><th>₹ net</th></tr>'+dk.map(function(k){ var d=days[k]; return '<tr><td>'+dmy(k*86400)+'</td><td>'+d.n+'</td><td>'+d.w+'</td><td class="'+ud(d.r)+'">'+R(d.r)+'</td></tr>'; }).join('')+'</table></div>';
+    h+='<div class="card"><h4 style="margin-top:0">Trades ('+tr.length+')</h4>'+(tr.length?'<div style="max-height:360px;overflow:auto"><table style="font-size:11.5px"><tr><th>When</th><th></th><th>Entry → exit</th><th style="text-align:right">₹ · pts</th></tr>'+
+      tr.slice().reverse().map(function(t){ var cp=t.side>0?'C':'P', op=t.why==='Open', pv=op?t.livePts:t.pts, rv=op?t.liveRs:t.rs;
+        return '<tr><td>'+dmy(t.t).slice(0,5)+'<br><span class="mut">'+hhmm(t.t)+'</span></td><td><b style="color:'+t.col+'">'+cp+'</b></td><td>'+fmt(t.entry,1)+' →<br>'+(op?'<i>open</i>':fmt(t.exit,1)+' <span class="mut">'+t.why+'</span>')+'</td><td style="text-align:right" class="'+ud(rv)+'">'+(t.skip?'<span class="mut">skipped</span>':R(rv)+(t.lots>1?' <span class="mut">×'+t.lots+'</span>':''))+'<br><span class="'+ud(pv)+'" style="opacity:.75">'+(pv>=0?'+':'')+fmt(pv,1)+' pts</span></td></tr>'; }).join('')+'</table></div>':'<p class="mut small" style="margin:0">No trades yet. The first one comes when a strategy signal fires on a closed candle.</p>')+'</div>';
+    if(closed.length) h+='<div class="card small mut">Charges paid '+R(rs.chg.total)+'. '+(cfg.inst==='opt'?'Option P&amp;L is an estimate: index points × delta '+cfg.call.delta+' on a ₹'+cfg.call.prem+' premium'+(cfg.theta?', minus time decay':'')+' – not real option prices.':'')+'</div>';
+  }
+  h+='<div class="row" style="gap:8px">'+(P.on?'<button class="btn grow" id="ppStop">■ Stop</button>':'')+'<button class="btn grow" id="ppChart">Show on chart</button><button class="btn grow" id="ppNew">New paper trade</button></div>';
+  box.innerHTML=h;
+  if($('ppStop')) $('ppStop').onclick=ppStop;
+  $('ppNew').onclick=function(){ if(this.dataset.c){ S.paper=null; save(); PP.res=null; PP.bars=null; PP.key=''; ppRender(); } else { this.dataset.c=1; this.textContent='Tap again – clears this one'; } };
+  $('ppChart').onclick=function(){ if(!r) return; var m=[], lab=[];
+    tr.forEach(function(t){ var it=r.D.t[t.sigI]; m.push(t.side>0?{time:it,position:'belowBar',color:'#26a69a',shape:'arrowUp'}:{time:it,position:'aboveBar',color:'#ef5350',shape:'arrowDown'}); lab.push({t:it,above:t.side<0,txt:t.side>0?'C':'P',b:true});
+      if(t.why!=='Open'){ var xt=r.D.t[Math.min(t.exI,r.D.n-1)]; m.push({time:xt,position:t.side>0?'aboveBar':'belowBar',color:t.side>0?'#26a69a':'#ef5350',shape:'circle',size:0.6}); lab.push({t:xt,above:t.side>0,txt:(t.rs>=0?'+':'')+'₹'+Math.round(t.rs)}); } });
+    btMarks={sym:P.sym,tf:P.tf,m:m,lab:lab}; var need=(S.sym!==P.sym||S.tf!==P.tf); S.sym=P.sym; S.tf=P.tf; save(); fillSym($('symSel'),P.sym);
+    Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===P.tf?' on':''); }); $('tfSel').value=P.tf;
+    showView('chart'); if(need) loadAll(); else renderSignals(); toast('Paper trades shown in yellow. Tap <b>✕ Clear</b> to remove.',4000); };
+}
+setInterval(function(){ if(S.paper&&S.paper.on&&!document.hidden) ppRun(); },30000);
+document.addEventListener('visibilitychange',function(){ if(!document.hidden&&S.paper&&S.paper.on) ppRun(); });
+if(S.paper) ppRun(true);
 function showView(v){
-  ['chart','strats','bt','set'].forEach(function(x){ $('v-'+x).className='view'+(x===v?' on':''); });
+  ['chart','strats','bt','paper','set'].forEach(function(x){ $('v-'+x).className='view'+(x===v?' on':''); });
   Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.className=b.dataset.v===v?'on':''; });
   if(v==='strats') renderStratList();
   if(v==='bt'){ fillBtStrat(); btQuick(); }
+  if(v==='paper') ppRender();
 }
 Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.onclick=function(){ showView(b.dataset.v); }; });
 
