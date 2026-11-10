@@ -58,7 +58,7 @@ small,.small{font-size:11px}
 #chart{position:absolute;inset:0}
 #legend{position:absolute;left:8px;top:4px;z-index:5;font-size:11px;color:#aab2c3;pointer-events:none;text-shadow:0 0 3px #000;max-width:75%}
 #legend span{margin-right:7px;white-space:nowrap}
-#zoom{position:absolute;right:158px;bottom:34px;z-index:6;display:flex;gap:5px}
+#zoom{position:absolute;right:66px;bottom:34px;z-index:6;display:flex;gap:5px}
 #joy{position:absolute;right:66px;bottom:34px;width:84px;height:84px;border-radius:50%;z-index:7;touch-action:none;-webkit-user-select:none;user-select:none;
   background:radial-gradient(circle,rgba(255,255,255,.04) 0,rgba(255,255,255,.08) 70%);border:1px solid rgba(255,255,255,.14);opacity:.7;transition:opacity .15s}
 #joy:before,#joy:after{content:'';position:absolute;background:rgba(255,255,255,.10);pointer-events:none}
@@ -169,7 +169,8 @@ nav.tabs button:not(.on) b svg{padding:2px 14px}
 #status.st-live i{background:#2ecc71;box-shadow:0 0 0 0 rgba(46,204,113,.6);animation:pulse 1.6s infinite}
 #status.st-err i{background:var(--dn)}#status.st-wait i{background:var(--warn)}
 @keyframes pulse{70%{box-shadow:0 0 0 6px rgba(46,204,113,0)}100%{box-shadow:0 0 0 0 rgba(46,204,113,0)}}
-#legend{max-width:55%;font-size:11px}
+#legend{max-width:calc(100% - 84px);font-size:11px;top:26px;line-height:1.5}#legend span{display:inline-block}
+#symSel.cmp{min-width:92px}.topbar #px{flex:0 0 auto}.topbar #chg{flex:0 9999 auto;min-width:0}.topbar .grow{min-width:0}
 .stats{gap:8px}.stat{background:var(--bg3);border-radius:10px;padding:8px 9px;border:1px solid transparent}
 .stat>div{font-size:10.5px;color:var(--mut);margin-bottom:2px}.stat b{font-size:14px}
 table{font-size:12px}tr:nth-child(even) td{background:rgba(255,255,255,.015)}
@@ -188,6 +189,7 @@ details>summary{cursor:pointer}
 .pbar{height:4px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:8px 0 6px}.pbar i{display:block;height:100%;background:var(--acc);border-radius:3px;transition:width .2s}
 #stratList .scard{border-radius:10px}#stratList .srow{min-height:40px;padding:4px 12px}
 #stratList .srow .chk{color:var(--mut)}
+.sdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
 .colrow input[type=range]{accent-color:var(--acc)}
 .x{font-size:20px;min-width:30px;min-height:30px}
 </style>
@@ -202,7 +204,7 @@ details>summary{cursor:pointer}
     <select id="tfSel" class="cmp"></select>
     <span id="px">--</span><span id="chg" class="small"></span>
     <span class="grow"></span>
-    <button class="btn sm" id="btnTemp" style="display:none;color:var(--warn)">✕ Test</button>
+    <button class="btn sm" id="btnTemp" style="display:none;color:var(--warn)">✕ Clear</button>
     <button class="btn sm ico" id="btnTools" title="Tools">☰</button>
   </div>
   <div class="bar toolbar" id="toolBar" style="display:none">
@@ -221,7 +223,6 @@ details>summary{cursor:pointer}
     <div id="legend"></div>
     <div id="chart"></div>
     <div id="status">loading…</div>
-    <div id="joy" title="Joystick: ← → candle width · ↑ ↓ candle height · double-tap = reset"><div class="jk"></div><div class="tip"></div><span class="jm">↔ ↕</span></div>
     <div id="zoom">
       <button id="zEnd" title="Go to latest">⇥</button>
     </div>
@@ -272,6 +273,7 @@ details>summary{cursor:pointer}
     <div class="card" style="padding:8px 10px">
       <div class="row" style="align-items:flex-end">
         <label class="lbl" style="flex:0 0 auto">Timeframe<select id="tuneTf"><option value="5m">5m (fast)</option><option value="1m">1m (slow)</option><option value="1m,5m">1m + 5m, keep the better</option></select></label>
+        <label class="lbl" style="flex:1 1 130px">Goal<select id="tuneObj"><option value="steady">Steady profit</option><option value="winpct">Highest win %</option><option value="net">Most profit</option></select></label>
         <button class="btn pri grow" id="tuneAll">✨ Test &amp; tune all · 5 years</button>
       </div>
       <div id="tuneOut" class="small mut" style="margin-top:8px">Runs “find best settings” on every strategy, applies what works and shows the profit on each line.</div>
@@ -337,7 +339,6 @@ details>summary{cursor:pointer}
         <label class="chk"><input type="checkbox" id="setVib"> Vibrate</label>
         <label class="chk"><input type="checkbox" id="setVol"> Volume bars</label>
         <label class="chk"><input type="checkbox" id="setDay"> Day separator lines</label>
-        <label class="lbl">Chart joystick<select id="setSl"><option value="on">On</option><option value="off">Off</option></select></label>
       </div>
       <p class="hint">Outside market hours (Mon–Fri 9:00–15:35 IST) the chart refreshes every 30 s to save data.</p>
     </div>
@@ -682,13 +683,37 @@ var PATTERNS={
   opcr_flip:{name:'Open ≈ prev close — continuation (flipped)'},
   engulf:{name:'Engulfing candle'},
   orb_break:{name:'ORB breakout (close beyond opening range)'},
-  fib_pa:{name:'Fibonacci levels + candle pattern (trend from daily)'}
+  fib_pa:{name:'Fibonacci levels + candle pattern (trend from daily)'},
+  mtf_pa:{name:'5m candles vs 15m candle (use on 1m or 5m chart)'}
 };
 var FIB_PATS={all:{L:['hammer','invhammer','bullEng','bullHar','piercing','mstar','twzB','inside'],S:['shooting','hanging','bearEng','bearHar','darkcloud','estar','twzT','inside']},
   strong:{L:['hammer','bullEng','mstar','inside'],S:['shooting','bearEng','estar','inside']}};
 function patternArrs(D,s){
   var n=D.n, L=new Array(n).fill(false), S=new Array(n).fill(false), P=s.pat||{}, type=s.pattern||'none';
   if(type==='none'){ for(var i=0;i<n;i++){ L[i]=true; S[i]=true; } return {L:L,S:S}; }
+  if(type==='mtf_pa'){
+    var tfm=1; for(i=1;i<Math.min(n,50);i++){ var df=(D.t[i]-D.t[i-1])/60; if(df>0&&df<=60){ tfm=df; break; } }
+    if(tfm>5) return {L:L,S:S};
+    var ck='__m5_'+tfm, M=D.cache[ck];
+    if(!M){ var c5=[], H15={}, cur=null, lastK=null;
+      for(i=0;i<n;i++){ var mm=D.mod[i]-555, b5=Math.floor(mm/5), b15=Math.floor(mm/15), k5=D.day[i]*1000+b5, k15=D.day[i]*100+b15;
+        if(k5!==lastK){ cur={i0:i,i1:i,o:D.o[i],h:D.h[i],l:D.l[i],c:D.c[i],day:D.day[i],b15:b15,done:false}; c5.push(cur); lastK=k5; } else { cur.i1=i; if(D.h[i]>cur.h) cur.h=D.h[i]; if(D.l[i]<cur.l) cur.l=D.l[i]; cur.c=D.c[i]; }
+        cur.done=((mm+tfm)%5===0);
+        var hh=H15[k15]; if(!hh) H15[k15]={o:D.o[i],h:D.h[i],l:D.l[i],c:D.c[i]}; else { if(D.h[i]>hh.h) hh.h=D.h[i]; if(D.l[i]<hh.l) hh.l=D.l[i]; hh.c=D.c[i]; } }
+      M=D.cache[ck]={c5:c5,H:H15}; }
+    var rule=P.rule||'base2', wk=(P.wickPct!=null?+P.wickPct:15)/100, bd=(P.bodyPct!=null?+P.bodyPct:60)/100;
+    var sh=function(c){ var rg=Math.max(1e-9,c.h-c.l); return {up:c.c>c.o,dn:c.c<c.o,lw:(Math.min(c.o,c.c)-c.l)/rg,uw:(c.h-Math.max(c.o,c.c))/rg,body:Math.abs(c.c-c.o)/rg}; };
+    for(var q=1;q<M.c5.length;q++){ var c2=M.c5[q], c1=M.c5[q-1]; if(!c2.done||c1.day!==c2.day) continue;
+      var Hc=M.H[c2.day*100+c2.b15-1], H2=M.H[c2.day*100+c2.b15-2]; if(!Hc) continue;
+      var a=sh(c1), b=sh(c2), lg=false, st=false;
+      if(rule==='base2'){ lg=a.up&&b.up&&a.lw<=wk&&b.lw<=wk&&c2.c>Hc.h; st=a.dn&&b.dn&&a.uw<=wk&&b.uw<=wk&&c2.c<Hc.l; }
+      else if(rule==='break15'){ lg=b.up&&b.body>=bd&&c2.c>Hc.h&&c1.c<=Hc.h; st=b.dn&&b.body>=bd&&c2.c<Hc.l&&c1.c>=Hc.l; }
+      else if(rule==='rej15'){ st=c2.h>Hc.h&&c2.c<Hc.h&&b.uw>=bd*0.8; lg=c2.l<Hc.l&&c2.c>Hc.l&&b.lw>=bd*0.8; }
+      else if(rule==='inside15'){ if(H2&&Hc.h<=H2.h&&Hc.l>=H2.l){ lg=c2.c>H2.h&&c1.c<=H2.h; st=c2.c<H2.l&&c1.c>=H2.l; } }
+      else if(rule==='eng15'){ lg=a.dn&&b.up&&c2.c>c1.o&&c2.o<=c1.c&&Math.min(c1.l,c2.l)<=Hc.l; st=a.up&&b.dn&&c2.c<c1.o&&c2.o>=c1.c&&Math.max(c1.h,c2.h)>=Hc.h; }
+      else if(rule==='pull15'){ var hb_=Math.abs(Hc.c-Hc.o)/Math.max(1e-9,Hc.h-Hc.l); lg=Hc.c>Hc.o&&hb_>=bd&&a.dn&&b.up&&c2.c>c1.h&&c2.l>Hc.l; st=Hc.c<Hc.o&&hb_>=bd&&a.up&&b.dn&&c2.c<c1.l&&c2.h<Hc.h; }
+      if(lg) L[c2.i1]=true; if(st) S[c2.i1]=true; }
+    return {L:L,S:S}; }
   if(type==='fib_pa'){
     var tl=+(P.trend||20), tr=indCalc(D,'DTREND',{len:tl}).dir, src=P.fibSrc||'both', tol=(P.tolPct!=null?+P.tolPct:0.05)/100;
     var FD=indCalc(D,'FIBD',{trend:tl}), FW=indCalc(D,'FIBW',{weeks:+(P.weeks||1),trend:tl}), ps=FIB_PATS[P.pset||'all']||FIB_PATS.all;
@@ -856,6 +881,12 @@ function stratLibrary(){
     mk('OPCR + VWAP + Supertrend',[C(PX,'>',VW),C(STd,'>',N(0))],[C(PX,'<',VW),C(STd,'<',N(0))],{pattern:'opcr',pat:{gapPct:10,rMin:0.6,rMax:1.5,minBodyPct:0.02},sl:{type:'pattern',v:0,buf:2}})
   ];
 }
+function stratLibrary2(){
+  var mk=function(name,rule,hold){ return {id:uid(),lib:true,name:name,pattern:'mtf_pa',pat:{rule:rule,wickPct:15,bodyPct:60},dir:'both',trigger:'first',long:[],short:[],
+    sl:{type:'atr',v:1.5,buf:0},tp:{type:'R',v:1},holdBars:hold||0,start:'09:30',end:'15:00',sq:'15:15',maxTrades:3,maxLossDay:0,stopAfterWin:false,onChart:false}; };
+  return [mk('5m/15m · two solid candles out of 15m','base2'),mk('5m/15m · strong break of 15m','break15'),mk('5m/15m · wick rejection at 15m (reversal)','rej15'),
+    mk('5m/15m · 15m inside-bar breakout','inside15'),mk('5m/15m · engulfing after 15m sweep (reversal)','eng15'),mk('5m/15m · pullback in strong 15m candle','pull15')];
+}
 function fibPreset(){ return {id:uid(),name:'Fib levels + candle pattern (2 candles)',pattern:'fib_pa',pat:{trend:20,weeks:1,fibSrc:'both',tolPct:0.05,pset:'all'},dir:'both',trigger:'first',long:[],short:[],
     sl:{type:'candle',v:0,buf:2},tp:{type:'none',v:0},holdBars:2,start:'09:20',end:'15:00',sq:'15:15',maxTrades:3,maxLossDay:0,stopAfterWin:false,onChart:false}; }
 function presets(){
@@ -890,6 +921,7 @@ function defaults(){
 var S;
 try{ S=JSON.parse(localStorage.getItem(LS)||'null'); }catch(e){ S=null; }
 if(!S||!S.strats) S=defaults();
+if(!S.lib2){ S.lib2=true; stratLibrary2().forEach(function(x){ if(!S.strats.some(function(y){ return y.name===x.name; })) S.strats.push(x); }); }
 if(!S.lib1){ S.lib1=true; stratLibrary().forEach(function(x){ if(!S.strats.some(function(y){ return y.name===x.name; })) S.strats.push(x); }); }
 if(!S.fibAdded){ S.fibAdded=true; if(!S.strats.some(function(x){ return x.pattern==='fib_pa'; })) S.strats.push(fibPreset()); }
 function save(){ try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){} }
@@ -1058,23 +1090,29 @@ function legend(){
   if(!D) return;
   var h='<span><b>'+symName(S.sym)+'</b> '+S.tf+'</span>';
   indSeries.forEach(function(x){ var def=IND[x.ind.t]; h+='<span style="color:'+(x.list[0]?x.list[0].col:'#9aa3b5')+'">'+def.label(x.ind.p)+'</span>'; });
+  (sigActive||[]).forEach(function(x){ h+='<span style="color:'+stratColor(x)+'">● '+x.name+'</span>'; });
   var m=mtfSel(); if(m.length) h+='<span style="color:#9aa3b5">⧉ '+m.slice().sort(function(a,b){ return MTF_TF[a]-MTF_TF[b]; }).join(' + ')+'</span>';
   $('legend').innerHTML=h;
 }
 function binIdx(t){ var lo=0,hi=D.n-1; while(lo<hi){ var m=(lo+hi+1)>>1; if(D.t[m]<=t) lo=m; else hi=m-1; } return lo; }
 function lastClosedIdx(){ if(!D||!D.n) return -1; if(RP.on) return D.n-1; var L=D.t[D.n-1]; return (nowIST() < L+TF[S.tf].min*60 && S.tf!=='1d') ? D.n-2 : D.n-1; }
 
+var sigText=[], sigActive=[], SPAL=['#4fc3f7','#ffd54f','#ba68c8','#ff9800','#f06292','#90caf9','#e6ee9c','#b39ddb','#ffab91','#80deea'];
+function stratColor(s){ if(!s.color){ var ix=S.strats.indexOf(s); s.color=SPAL[(ix<0?S.strats.length:ix)%SPAL.length]; } return s.color; }
 function renderSignals(){
   if(!D) return;
   var marks=[], tfMin=TF[S.tf].min, lc=lastClosedIdx();
-  var active=S.strats.filter(function(s){return s.onChart && !(chartTemp&&chartTemp.id===s.id);}); if(chartTemp) active.push(chartTemp); $('btnTemp').style.display=chartTemp?'':'none';
+  var active=S.strats.filter(function(s){return s.onChart && !(chartTemp&&chartTemp.id===s.id);}); if(chartTemp) active.push(chartTemp); $('btnTemp').style.display=(chartTemp||btMarks)?'':'none';
+  sigText=[]; sigActive=active;
   $('stratOnCount').textContent=active.length;
   active.forEach(function(s,si){
     var tr; try{ tr=backtest(D,s,tfMin,0,lc); }catch(e){ console.error(e); return; }
-    var tag=active.length>1?(si+1)+':':'';
+    var col=stratColor(s), G='#26a69a', Rd='#ef5350';
     tr.forEach(function(t){
-      marks.push(t.side>0?{time:D.t[t.sigI],position:'belowBar',color:'#26a69a',shape:'arrowUp',text:tag+'CALL'}:{time:D.t[t.sigI],position:'aboveBar',color:'#ef5350',shape:'arrowDown',text:tag+'PUT'});
-      if(t.why!=='Open') marks.push({time:D.t[Math.min(t.exI,D.n-1)],position:t.side>0?'aboveBar':'belowBar',color:t.pts>0?'#8bc34a':'#ff8a65',shape:'circle',size:0.6,text:(t.pts>0?'+':'')+fmt(t.pts,1)});
+      marks.push(t.side>0?{time:D.t[t.sigI],position:'belowBar',color:G,shape:'arrowUp'}:{time:D.t[t.sigI],position:'aboveBar',color:Rd,shape:'arrowDown'});
+      sigText.push({i:t.sigI,above:t.side<0,txt:t.side>0?'C':'P',col:col,k:si,b:true});
+      if(t.why!=='Open'){ var xi=Math.min(t.exI,D.n-1); marks.push({time:D.t[xi],position:t.side>0?'aboveBar':'belowBar',color:t.side>0?G:Rd,shape:'circle',size:0.6});
+        sigText.push({i:xi,above:t.side>0,txt:(t.pts>0?'+':'')+fmt(t.pts,1),col:col,k:si}); }
     });
     // live alert: newest signal on the last closed candle
     var sig=strategySignals(D,s,tfMin); var g=sig.length?sig[sig.length-1]:null;
@@ -1091,10 +1129,12 @@ function renderSignals(){
     } else if(lastAlertKey[s.id]===undefined) lastAlertKey[s.id]='none';
   });
   indSeries.forEach(function(x){ var def=IND[x.ind.t]; if(def.markers){ try{ marks=marks.concat(def.markers(indCalc(D,x.ind.t,x.ind.p),D)); }catch(e){} } });
-  if(btMarks && btMarks.sym===S.sym && btMarks.tf===S.tf && !RP.on) marks=marks.concat(btMarks.m);
+  if(btMarks && btMarks.sym===S.sym && btMarks.tf===S.tf && !RP.on){ marks=marks.concat(btMarks.m);
+    (btMarks.lab||[]).forEach(function(l){ var lo=0, hi=D.n-1; while(lo<hi){ var md=(lo+hi)>>1; if(D.t[md]<l.t) lo=md+1; else hi=md; } if(D.t[lo]===l.t) sigText.push({i:lo,above:l.above,txt:l.txt,col:'#ffd54f',k:active.length,b:l.b}); }); }
   if(RP.on){ var lt=D.t[D.n-1]; marks=marks.concat(RP.marks.filter(function(m){ return m.time<=lt; })); }
   marks.sort(function(a,b){return a.time-b.time;});
   markersApi.setMarkers(marks);
+  try{ legend(); if(ovReq) ovReq(); }catch(e){}
 }
 var audioCtx=null;
 document.addEventListener('pointerdown',function(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} },{passive:true});
@@ -1221,6 +1261,11 @@ function drawOverlay(ctx,size,layer){
       var dd=new Date(D.t[i]*1000); ctx.fillText(['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dd.getUTCDay()]+' '+dd.getUTCDate()+'/'+(dd.getUTCMonth()+1),x+3,size.height-6); } }
     ctx.restore(); return;
   }
+  if(sigText.length){ ctx.save(); ctx.textAlign='center'; ctx.lineJoin='round'; var lo_=Math.floor(r.from)-1, hi_=Math.ceil(r.to)+1;
+    sigText.forEach(function(g){ if(g.i<lo_||g.i>hi_) return; var x=ts.logicalToCoordinate(g.i), y=cSeries.priceToCoordinate(g.above?D.h[g.i]:D.l[g.i]); if(x==null||y==null) return;
+      y+= g.above? -(22+g.k*11) : (30+g.k*11); ctx.font=(g.b?'bold 11px':'10px')+' -apple-system,Segoe UI,Roboto,sans-serif';
+      ctx.strokeStyle='rgba(13,16,23,0.9)'; ctx.lineWidth=3; ctx.strokeText(g.txt,x,y); ctx.fillStyle=g.col; ctx.fillText(g.txt,x,y); });
+    ctx.restore(); }
   drList().forEach(function(d){
     if(d.k==='h') return; var q=drXY(d); if(q.x==null) return;
     ctx.save();
@@ -1387,37 +1432,10 @@ $('btnMtf').onclick=function(){ var bar=$('mtfBar'), show=bar.style.display==='n
 $('btnCol').onclick=function(){ var b=$('colBar'), show=b.style.display==='none'; b.style.display=show?'flex':'none'; $('btnCol').className='btn sm'+(show?' on':''); colorsUI(); };
 $('mtfOff').onclick=function(){ S.mtf.on=false; S.mtf.tfs=[]; save(); mtfUI(); if(ovReq) ovReq(); $('mtfBar').style.display='none'; };
 mtfUI();
-// ---------------- joystick: ← → candle width · ↑ ↓ candle height (panning stays a finger swipe) ----------------
 var SL={busy:false}, VZ=1;
-function candAuto(orig){ var r=orig(); if(!r||!r.priceRange||VZ===1) return r; var a=r.priceRange.minValue,b=r.priceRange.maxValue,c=(a+b)/2,h=Math.max(1e-9,(b-a)/2)*VZ; return {priceRange:{minValue:c-h,maxValue:c+h},margins:r.margins}; }
-function ovAuto(orig){ return VZ===1?orig():null; }
-function vzApply(){ if(!cSeries) return; try{ chart.priceScale('right').applyOptions({autoScale:true}); cSeries.applyOptions({autoscaleInfoProvider:candAuto}); }catch(e){} }
+function candAuto(orig){ return orig(); }
+function ovAuto(orig){ return orig(); }
 function slPaint(){}
-(function(){
-  var J=$('joy'), K=J.querySelector('.jk'), T=J.querySelector('.tip'), M=J.querySelector('.jm'), st=null, raf=0, lastTap=0, R=26;
-  function setVis(){ J.style.display=(S.sliders==='off')?'none':''; }
-  function tick(){ if(!st){ raf=0; return; } var r=chart.timeScale().getVisibleLogicalRange(); if(r&&D){
-      var n=D.n, w=r.to-r.from, dz=0.15, ax=Math.abs(st.dx)<dz?0:(st.dx-Math.sign(st.dx)*dz)/(1-dz), ay=Math.abs(st.dy)<dz?0:(st.dy-Math.sign(st.dy)*dz)/(1-dz);
-      // ← → : candle width (time scale). Right = wider candles.
-      if(ax){ var nw=Math.max(10,Math.min(Math.max(12,n*1.05),w*Math.exp(-ax*0.035))), live=r.to>=n-2, from, to;
-        if(live){ to=r.to; from=to-nw; } else { var c=(r.from+r.to)/2; from=c-nw/2; to=c+nw/2; }
-        chart.timeScale().setVisibleLogicalRange({from:from,to:to}); w=nw; }
-      // ↑ ↓ : candle height (price scale). Up = taller candles.
-      if(ay){ VZ=Math.max(0.2,Math.min(5,VZ*Math.exp(-ay*0.035))); vzApply(); }
-      T.textContent='↔ '+Math.round(w)+' candles · ↕ ×'+(1/VZ).toFixed(2); }
-    raf=requestAnimationFrame(tick); }
-  function place(ev){ var b=J.getBoundingClientRect(), cx=b.left+b.width/2, cy=b.top+b.height/2, x=ev.clientX-cx, y=ev.clientY-cy, d=Math.sqrt(x*x+y*y);
-    if(d>R){ x=x*R/d; y=y*R/d; } K.style.transform='translate('+x+'px,'+y+'px)'; st.dx=x/R; st.dy=-y/R; if(d>6) st.moved=true; }
-  J.addEventListener('pointerdown',function(ev){ ev.preventDefault(); ev.stopPropagation(); try{ J.setPointerCapture(ev.pointerId); }catch(x){}
-    st={dx:0,dy:0,moved:false,t0:Date.now()}; J.classList.add('act'); SL.busy=true; place(ev);
-    if(!raf) raf=requestAnimationFrame(tick); });
-  J.addEventListener('pointermove',function(ev){ if(!st) return; ev.preventDefault(); place(ev); });
-  function end(){ if(!st) return; var tap=!st.moved&&Date.now()-st.t0<300; st=null; SL.busy=false;
-    J.classList.remove('act'); K.style.transform='';
-    if(tap){ var now=Date.now(); if(now-lastTap<350){ VZ=1; vzApply(); var r=chart.timeScale().getVisibleLogicalRange(); if(r) chart.timeScale().setVisibleLogicalRange({from:r.to-120,to:r.to}); toast('Scale reset',1000); } lastTap=now; } }
-  J.addEventListener('pointerup',end); J.addEventListener('pointercancel',end);
-  $('setSl').value=S.sliders==='off'?'off':'on'; $('setSl').onchange=function(){ S.sliders=this.value; save(); setVis(); }; setVis();
-})();
 Object.keys(TF).forEach(function(tf){ var b=el('button',{class:'btn sm'+(tf===S.tf?' on':'')},tf); b.onclick=function(){ S.tf=tf; save(); mtfUI(); $('tfSel').value=tf; Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); }); loadAll(); }; $('tfBtns').appendChild(b); });
 
 // ---------------- sheet ----------------
@@ -1509,7 +1527,7 @@ function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done){
     var A=part(tr.filter(function(t){ return t.t<split; }),mA), L3=(split-t0)/3, ch=[0,0,0];
     tr.forEach(function(t){ if(t.t<split){ var q=Math.min(2,Math.floor((t.t-t0)/L3)); ch[q]+=money?t.rs:t.pts; } }); A.minChunk=Math.min(ch[0],ch[1],ch[2])/(L3/MD);
     return {A:A,B:part(tr.filter(function(t){ return t.t>=split; }),mB),F:part(tr,mA+mB)}; }
-  function score(r){ var a=r.A; if(a.n<Math.max(12,mA*0.5) || a.net<=0) return -1e15+a.net; return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='steady'? a.minChunk : a.perMon; }
+  function score(r){ var a=r.A; if(a.n<Math.max(12,mA*0.5) || a.net<=0) return -1e15+a.net; return obj==='winpct'? a.win*1e6+a.perMon : obj==='wins'? a.winsMon*1e6+a.perMon : obj==='steady'? a.minChunk : a.perMon; }
   var sides=['long','short'], res={}, si=0, runs=0, P=optSpace(base,tf), pass=0, pi=0, vi=0, cur, curR, curS;
   function startSide(){ cur=JSON.parse(JSON.stringify(sideS(base,si===0?1:-1))); delete cur.sides; cur.dir=sides[si]; curR=ev(cur); curS=score(curR); runs++; pass=0; pi=0; vi=0; }
   startSide();
@@ -1546,7 +1564,7 @@ function tuneAll(){
         k++; return setTimeout(one,0); }
       var tf=tfs[ti++];
       getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){
-        tuneCore(orig,Dx,tf,days,cost,cfg,S.optObj==='net'||S.optObj==='wins'?S.optObj:'steady',tf==='1m'?1:2,function(runs,si){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'; },function(R){
+        tuneCore(orig,Dx,tf,days,cost,cfg,$('tuneObj').value,tf==='1m'?1:2,function(runs,si){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'; },function(R){
           if(!R) return finish('Stopped.');
           var g=function(x){ return x && x.ok && x.r.B.net>0 && x.r.B.n>=5; }, gL=g(R.res.long), gS=g(R.res.short), nw=null;
           if(gL||gS){ nw=JSON.parse(JSON.stringify(orig)); nw.sides={long:pick(R.res.long.s),short:pick(R.res.short.s)}; nw.dir=gL&&gS?'both':gL?'long':'short'; }
@@ -1564,7 +1582,7 @@ function renderStratList(){
   S.strats.forEach(function(s,idx){
     var c=el('div',{class:'card scard'});
     var top=el('div',{class:'row srow'});
-    top.appendChild(el('span',{class:'grow sname'},s.name));
+    top.appendChild(el('span',{class:'grow sname'},'<i class="sdot" style="background:'+stratColor(s)+'"></i>'+s.name));
     top.appendChild(el('span',{class:'sres'},resLine(s)));
     var lab=el('label',{class:'chk'}); var cb=el('input',{type:'checkbox'}); cb.checked=!!s.onChart; cb.onchange=function(){ s.onChart=cb.checked; save(); renderSignals(); }; lab.appendChild(cb); lab.appendChild(document.createTextNode('Chart')); top.appendChild(lab);
     c.appendChild(top);
@@ -1573,6 +1591,7 @@ function renderStratList(){
     det.appendChild(el('div',{style:'margin:0 0 6px'},stratSummary(s)+resDetail(s)));
     var acts=el('div',{class:'row'});
     [['Edit',function(){ editStrategy(s); }],['Backtest',function(){ $('btStrat').value=s.id; showView('bt'); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
+    var cp=el('input',{type:'color',value:stratColor(s),title:'Colour on chart',style:'width:36px;height:30px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none'}); cp.onchange=function(){ s.color=cp.value; save(); renderStratList(); renderSignals(); }; acts.appendChild(cp);
     det.appendChild(acts); c.appendChild(det); box.appendChild(c);
   });
   fillBtStrat();
@@ -1692,6 +1711,12 @@ function condBuilder(s,side,box,c,idx,preset){
   box.innerHTML=''; box.appendChild(w);
 }
 function field(label,input){ var w=el('label',{class:'lbl'},label); w.appendChild(input); return w; }
+var M15_RULES=[['base2','Two solid 5m candles (no wick) closing outside the last 15m candle'],['break15','Strong 5m candle breaks the last 15m high / low'],['rej15','5m wick pokes the 15m high / low and closes back (reversal)'],['inside15','15m inside bar – 5m breakout of the mother candle'],['eng15','5m engulfing after sweeping the 15m high / low (reversal)'],['pull15','Strong 15m candle – 5m pullback then continuation']];
+function m15Row(o,cb){ o.pat=o.pat||{}; var r=el('div',{class:'row',style:'margin-top:6px'}), P=o.pat;
+  r.appendChild(field('5m / 15m rule',sel(M15_RULES,P.rule||'base2',function(v){P.rule=v;cb();})));
+  r.appendChild(field('Max wick % (solid candle)',num(P.wickPct!=null?P.wickPct:15,function(v){P.wickPct=v;cb();})));
+  r.appendChild(field('Min body / wick %',num(P.bodyPct!=null?P.bodyPct:60,function(v){P.bodyPct=v;cb();})));
+  return r; }
 function fibRow(o,cb){ o.pat=o.pat||{}; var r=el('div',{class:'row',style:'margin-top:6px'}), P=o.pat;
   r.appendChild(field('Daily trend EMA (days)',num(P.trend||20,function(v){P.trend=v;cb();},1)));
   r.appendChild(field('Weekly fib: last N weeks',num(P.weeks||1,function(v){P.weeks=v;cb();},1)));
@@ -1724,6 +1749,7 @@ function editStrategy(orig,isNew){
         patBox.appendChild(r2);
         patBox.appendChild(el('p',{class:'hint'},'Red candle then green (open ≈ previous close, slightly bigger) → CALL. Green then red → PUT. 0.02% ≈ 5 Nifty points; 0.04% ≈ 10.'));
       }
+      if(s.pattern==='mtf_pa'){ patBox.appendChild(m15Row(s,function(){})); patBox.appendChild(el('p',{class:'hint'},'Builds 5m and 15m candles from the chart’s own candles (use a 1m or 5m chart). The signal comes when a 5m candle closes; entry is on the next candle. Turn on ⧉ MTF 5m + 15m to see the candles it reads.')); }
       if(s.pattern==='fib_pa'){ patBox.appendChild(fibRow(s,function(){})); patBox.appendChild(el('p',{class:'hint'},'Trend = yesterday’s close vs EMA of daily closes. Fib is drawn low→high in an uptrend (high→low in a downtrend) over the previous day and the previous week(s). CALL when a bullish pattern forms on a level in an uptrend, PUT when a bearish one forms in a downtrend. Entry on the next candle – set “Exit after N candles” to 1–2.')); }
       if(s.pattern==='orb_break'){ var r3=el('div',{class:'row',style:'margin-top:6px'}); r3.appendChild(field('Opening range minutes',num(s.pat.orbMins||15,function(v){s.pat.orbMins=v;}))); patBox.appendChild(r3); }
       if(s.pattern==='none'){ var r4=el('div',{class:'row',style:'margin-top:6px'}); r4.appendChild(field('Signal when',sel([['first','conditions first become true'],['every','every candle while true']],s.trigger||'first',function(v){s.trigger=v;}))); patBox.appendChild(r4); }
@@ -1876,11 +1902,13 @@ function runBt(){
     var eq=0, last=-1, pts=[]; tr.forEach(function(t){ if(t.why==='Open') return; eq+=pv(t); var tt=t.te; if(tt<=last) tt=last+1; last=tt; pts.push({time:tt,value:+eq.toFixed(2)}); });
     ser.setData(pts); eqChart.timeScale().fitContent();
     $('btShow').onclick=function(){
-      var m=[]; tr.forEach(function(t){ m.push(t.side>0?{time:Dx.t[t.sigI],position:'belowBar',color:'#ffd54f',shape:'arrowUp',text:'BT CALL'}:{time:Dx.t[t.sigI],position:'aboveBar',color:'#ffd54f',shape:'arrowDown',text:'BT PUT'}); if(t.why!=='Open') m.push({time:Dx.t[Math.min(t.exI,Dx.n-1)],position:'inBar',color:t.pts>0?'#8bc34a':'#ff8a65',shape:'circle',size:0.5}); });
-      btMarks={sym:sym,tf:tf,m:m}; var need=(S.sym!==sym||S.tf!==tf);
+      var m=[], lab=[]; tr.forEach(function(t){ m.push(t.side>0?{time:Dx.t[t.sigI],position:'belowBar',color:'#26a69a',shape:'arrowUp'}:{time:Dx.t[t.sigI],position:'aboveBar',color:'#ef5350',shape:'arrowDown'});
+        lab.push({t:Dx.t[t.sigI],above:t.side<0,txt:t.side>0?'C':'P',b:true});
+        if(t.why!=='Open'){ var xt=Dx.t[Math.min(t.exI,Dx.n-1)]; m.push({time:xt,position:t.side>0?'aboveBar':'belowBar',color:t.side>0?'#26a69a':'#ef5350',shape:'circle',size:0.6}); lab.push({t:xt,above:t.side>0,txt:(t.pts>0?'+':'')+fmt(t.pts,1)}); } });
+      btMarks={sym:sym,tf:tf,m:m,lab:lab}; var need=(S.sym!==sym||S.tf!==tf);
       S.sym=sym; S.tf=tf; save(); fillSym($('symSel'),sym); Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); });
       showView('chart'); if(need) loadAll(); else renderSignals();
-      toast('Backtest trades shown in yellow. Scroll left to see older ones.',4000);
+      toast('Backtest trades shown with yellow labels. Tap <b>✕ Clear</b> at the top of the chart to remove them.',5000);
     };
   }).catch(function(e){ out.innerHTML='<div class="card dn">Error: '+e.message+'</div>'; });
 }
@@ -1904,6 +1932,7 @@ function optSpace(base,tf){
     P.push({n:'Min body %',vals:[0.02,0.05,0.1,0.15,0.2,0.3],set:setp('minBodyPct')});
   }
   if(pat==='orb_break') P.push({n:'ORB minutes',vals:[5,15,30,60],set:setp('orbMins')});
+  if(pat==='mtf_pa'){ P.push({n:'5m / 15m rule',vals:['base2','break15','rej15','inside15','eng15','pull15'],set:setp('rule')}); P.push({n:'Max wick %',vals:[5,10,15,25,35],set:setp('wickPct')}); P.push({n:'Min body %',vals:[40,50,60,70,80],set:setp('bodyPct')}); }
   if(pat==='fib_pa'){
     P.push({n:'Daily trend EMA',vals:[5,10,20,50],set:setp('trend')});
     P.push({n:'Weekly fib weeks',vals:[1,2,4],set:setp('weeks')});
@@ -1911,7 +1940,7 @@ function optSpace(base,tf){
     P.push({n:'Touch tolerance %',vals:[0.02,0.05,0.1,0.15],set:setp('tolPct')});
     P.push({n:'Candle patterns',vals:['all','strong'],set:setp('pset')});
   }
-  P.push({n:'Exit after N candles',vals:[0,1,2,3,4,6],set:function(s,v){ s.holdBars=v; }});
+  P.push({n:'Exit after N candles',vals:[0,1,2,3,4,6,10,15],set:function(s,v){ s.holdBars=v; }});
   var SL=[['pattern',0,0],['pattern',0,2],['pattern',0,5],['pattern',0,10],['candle',0,0],['candle',0,2],['candle',0,5],['pct',0.15,0],['pct',0.25,0],['pct',0.4,0],['pct',0.6,0],['atr',1,0],['atr',1.5,0],['atr',2,0]];
   var TP=[['R',0.5],['R',0.75],['R',1],['R',1.25],['R',1.5],['R',2],['R',2.5],['R',3],['pct',0.2],['pct',0.35],['pct',0.5],['pct',0.75],['pct',1],['none',0]];
   var ST=[]; SL.forEach(function(a){ TP.forEach(function(b){ ST.push([a,b]); }); });
@@ -1928,6 +1957,7 @@ function optDesc(s,tf){
   var p=s.pat||{}, pat=s.pattern||'none', out=[];
   if(pat==='opcr'||pat==='opcr_flip') out.push('Max gap '+(p.gapPct!=null?p.gapPct:10)+'% · size '+(p.rMin!=null?p.rMin:1)+'–'+(p.rMax!=null?p.rMax:1.3)+'× · min body '+(p.minBodyPct!=null?p.minBodyPct:0.02)+'%');
   if(pat==='orb_break') out.push('ORB '+(p.orbMins||15)+' min');
+  if(pat==='mtf_pa') out.push('Rule: '+((M15_RULES.filter(function(x){ return x[0]===(p.rule||'base2'); })[0]||[])[1]||p.rule)+' · wick ≤ '+(p.wickPct!=null?p.wickPct:15)+'% · body ≥ '+(p.bodyPct!=null?p.bodyPct:60)+'%');
   if(pat==='fib_pa') out.push('Trend EMA '+(p.trend||20)+'d · weekly fib '+(p.weeks||1)+'w · levels: '+({both:'prev day + weekly',day:'prev day',week:'weekly',confl:'where both agree'})[p.fibSrc||'both']+' · tolerance '+(p.tolPct!=null?p.tolPct:0.05)+'% · patterns: '+(p.pset||'all'));
   var sl=s.sl||{}, tp=s.tp||{};
   out.push('SL: '+({pattern:'pattern candles',candle:'signal candle',pts:sl.v+' pts',pct:sl.v+'%',atr:sl.v+'× ATR'})[sl.type||'pattern']+((sl.type==='pattern'||sl.type==='candle'||!sl.type)?' + '+(sl.buf||0)+' pts':'')+
@@ -1961,7 +1991,7 @@ function btOptimize(){
       A.minChunk=mc;
       return {A:A,B:part(tr.filter(function(t){ return t.t>=split; }),mB,split,t1),F:part(tr,mA+mB,t0,t1)}; }
     function score(r){ var a=r.A; if(a.n<Math.max(12,mA*0.5) || a.net<=0) return -1e15+a.net;
-      return obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : obj==='steady'? a.minChunk : a.perMon; }
+      return obj==='winpct'? a.win*1e6+a.perMon : obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? a.green*1e6+a.perMon : obj==='steady'? a.minChunk : a.perMon; }
     var sides=[['long','CALL'],['short','PUT']], res={}, si=0, runs=0, P=optSpace(base,tf), pass=0, pi=0, vi=0, cur, curR, curS;
     function startSide(){ cur=JSON.parse(JSON.stringify(sideS(base,si===0?1:-1))); delete cur.sides; cur.dir=sides[si][0]; cur.name=base.name+' · '+sides[si][1]+' best'; curR=ev(cur); curS=score(curR); runs++; pass=0; pi=0; vi=0; }
     startSide();
@@ -1993,7 +2023,7 @@ function btOptimize(){
         var ix=S.strats.indexOf(orig); S.strats[ix]=nw; btWork=null; btDirty=false; save(); try{ renderSignals(); }catch(e){} applied=true;
       }
       var h='<div class="card" data-k="opt"><h3 class="chd">'+(applied?'✅ Best settings applied':'🔍 Best settings')+' · '+symName(sym)+' '+tf+'</h3>'+
-        '<div class="small mut">Goal: '+({steady:'steady (best worst-stretch)',net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+' · '+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
+        '<div class="small mut">Goal: '+({winpct:'highest win %',steady:'steady (best worst-stretch)',net:'most ₹/month',wins:'most winning trades/month',green:'most profitable months'})[obj]+' · '+runs+' combinations · learn '+dmy(t0)+'→'+dmy(split)+' · check '+dmy(split)+'→'+dmy(t1)+'</div>';
       ['long','short'].forEach(function(k){ var x=res[k]; if(!x) return; var nm=k==='long'?'CALL':'PUT', g=k==='long'?gL:gS;
         h+='<h4 class="'+(k==='long'?'up':'dn')+'" style="margin-top:12px">'+nm+(applied?(g?' – applied':' – switched OFF (lost money on the check period)'):'')+(x.partial?' (stopped early)':'')+'</h4>';
         h+='<p class="hint" style="margin:0 0 6px">'+optDesc(x.s,tf)+'</p><div style="overflow:auto"><table><tr><th></th><th>Trades/mo</th><th>Wins/mo</th><th>Win%</th><th>PF</th><th>Net/mo</th><th>+ in 30 days</th></tr>'+
@@ -2035,6 +2065,7 @@ function btQuick(){
     r2.appendChild(field('Size ≤ ×',num(e.pat.rMax!=null?e.pat.rMax:1.3,function(v){e.pat.rMax=v;ch();})));
     r2.appendChild(field('Min body %',num(e.pat.minBodyPct!=null?e.pat.minBodyPct:0.02,function(v){e.pat.minBodyPct=v;ch();})));
     d.appendChild(r2); }
+  if(s.pattern==='mtf_pa') d.appendChild(m15Row(e,ch));
   if(s.pattern==='fib_pa') d.appendChild(fibRow(e,ch));
   if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('ORB minutes',num(e.pat.orbMins||15,function(v){e.pat.orbMins=v;ch();}))); d.appendChild(r2b); }
   var r3=el('div',{class:'row',style:'margin-top:6px'});
@@ -2072,7 +2103,7 @@ function btQuick(){
   };
   r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
   var r7=el('div',{class:'row',style:'margin-top:8px;align-items:flex-end'});
-  var ob=sel([['steady','Steady – best worst-stretch profit'],['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'steady',function(v){ S.optObj=v; save(); });
+  var ob=sel([['steady','Steady – best worst-stretch profit'],['winpct','Highest win % (still profitable)'],['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'steady',function(v){ S.optObj=v; save(); });
   r7.appendChild(field('Find best settings for',ob));
   var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✨ Find & apply best CALL + PUT settings'); bo.onclick=btOptimize; r7.appendChild(bo);
   d.appendChild(r7);
@@ -2080,7 +2111,7 @@ function btQuick(){
   box.appendChild(d);
 }
 $('btStrat').onchange=function(){ btWork=null; btDirty=false; btQuick(); };
-$('btnTemp').onclick=function(){ chartTemp=null; renderSignals(); toast('Test strategy removed from chart',2000); };
+$('btnTemp').onclick=function(){ chartTemp=null; btMarks=null; renderSignals(); toast('Test / backtest marks removed from chart',2000); };
 $('btAll').onclick=function(){
   var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut');
   out.innerHTML='<div class="card">Running all strategies…</div>';
