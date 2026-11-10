@@ -132,6 +132,64 @@ td:first-child,th:first-child{text-align:left}
 #rpBar input{padding:4px 6px;font-size:12px}
 #rpBar select{padding:4px 6px;font-size:12px}
 .btn:disabled{opacity:.4}
+
+/* ---------- polish layer ---------- */
+:root{--bg:#0d1017;--bg2:#151a23;--bg3:#1c2230;--bd:#283042;--tx:#e3e6ec;--mut:#8b94a7;--acc:#3b7cff;--r:10px}
+html,body{font:14px/1.4 Inter,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+#px,.stat b,td,#btBar .big,.sres{font-variant-numeric:tabular-nums}
+.scroll{padding:12px;scrollbar-width:thin;scrollbar-color:var(--bd) transparent}
+.scroll::-webkit-scrollbar{width:4px;height:4px}.scroll::-webkit-scrollbar-thumb{background:var(--bd);border-radius:4px}
+.btn,select,input[type=text],input[type=number],input[type=time]{border-radius:9px;padding:8px 10px;min-height:36px;outline:none;transition:border-color .15s,background .15s,transform .05s}
+.btn.sm{padding:5px 10px;min-height:30px;font-size:12.5px;border-radius:8px}
+.btn:active{transform:scale(.97);background:#232b3b}
+.btn.pri,.btn.on{background:var(--acc);border-color:var(--acc);font-weight:600}
+.btn.pri:active,.btn.on:active{background:#2f66d6}
+.btn:disabled{opacity:.5}
+select:focus,input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(59,124,255,.18)}
+select{-webkit-appearance:none;appearance:none;padding-right:26px;background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;background-size:5px 5px;background-repeat:no-repeat;text-overflow:ellipsis}
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:34px!important;height:20px;min-height:0;flex:0 0 34px;border-radius:12px;background:#2a3244;border:1px solid var(--bd);position:relative;transition:background .15s;margin:0;padding:0;cursor:pointer}
+input[type=checkbox]:after{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#aab2c3;transition:transform .15s,background .15s}
+input[type=checkbox]:checked{background:var(--acc);border-color:var(--acc)}
+input[type=checkbox]:checked:after{transform:translateX(14px);background:#fff}
+.card{border-radius:14px;padding:12px;margin-bottom:10px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+h3{font-size:15px;font-weight:650;letter-spacing:.1px}
+h4{text-transform:none;font-size:12.5px}
+.lbl{font-size:11.5px;gap:4px}
+.hint{font-size:12px;line-height:1.5}
+.bar{padding:7px 10px;gap:7px}
+nav.tabs{background:rgba(21,26,35,.96);backdrop-filter:blur(8px)}
+nav.tabs button{padding:7px 0 7px;font-size:11px;font-weight:500;transition:color .15s}
+nav.tabs button b{display:flex;justify-content:center;margin-bottom:2px}
+nav.tabs button b svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;padding:0;box-sizing:content-box;border-radius:10px;transition:background .15s}
+nav.tabs button.on{color:#fff}nav.tabs button.on b{color:var(--acc)}
+nav.tabs button.on b svg{background:rgba(59,124,255,.14);padding:2px 14px}
+nav.tabs button:not(.on) b svg{padding:2px 14px}
+#status{left:auto;right:66px;top:6px;bottom:auto;display:flex;align-items:center;gap:5px;background:rgba(13,16,23,.7);border:1px solid var(--bd);border-radius:10px;padding:2px 8px;font-size:10px;max-width:55%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status i{width:6px;height:6px;border-radius:50%;background:var(--mut);flex:0 0 auto}
+#status.st-live i{background:#2ecc71;box-shadow:0 0 0 0 rgba(46,204,113,.6);animation:pulse 1.6s infinite}
+#status.st-err i{background:var(--dn)}#status.st-wait i{background:var(--warn)}
+@keyframes pulse{70%{box-shadow:0 0 0 6px rgba(46,204,113,0)}100%{box-shadow:0 0 0 0 rgba(46,204,113,0)}}
+#legend{max-width:55%;font-size:11px}
+.stats{gap:8px}.stat{background:var(--bg3);border-radius:10px;padding:8px 9px;border:1px solid transparent}
+.stat>div{font-size:10.5px;color:var(--mut);margin-bottom:2px}.stat b{font-size:14px}
+table{font-size:12px}tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.pill{border-radius:8px;padding:3px 8px;font-size:11.5px}
+#toast{left:12px;right:12px;bottom:76px;border-radius:12px;background:#16233d;padding:11px 12px;font-size:13px}
+#btBar{border-radius:14px;padding:9px 10px;background:rgba(21,26,35,.97);backdrop-filter:blur(8px)}
+#sheetBox{border-radius:18px 18px 0 0}#sheetHead{padding:12px 14px}
+details.fold{margin-top:8px;border:1px solid var(--bd);border-radius:10px;padding:0 10px;background:rgba(255,255,255,.015)}
+details.fold[open]{padding-bottom:10px}
+details.fold>summary{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;cursor:pointer;list-style:none;font-size:13px;font-weight:600}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary:before{content:'▸';color:var(--mut);font-size:11px;margin-right:6px}details.fold[open]>summary:before{content:'▾'}
+details.fold>summary>span:first-child{flex:0 0 auto;white-space:nowrap}details.fold>summary>span:last-child{flex:1;min-width:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
+#tfSel.cmp{max-width:74px;min-width:66px}#symSel.cmp{max-width:32vw}
+details>summary{cursor:pointer}
+.pbar{height:4px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:8px 0 6px}.pbar i{display:block;height:100%;background:var(--acc);border-radius:3px;transition:width .2s}
+#stratList .scard{border-radius:10px}#stratList .srow{min-height:40px;padding:4px 12px}
+#stratList .srow .chk{color:var(--mut)}
+.colrow input[type=range]{accent-color:var(--acc)}
+.x{font-size:20px;min-width:30px;min-height:30px}
 </style>
 </head>
 <body>
@@ -216,7 +274,7 @@ td:first-child,th:first-child{text-align:left}
         <label class="lbl" style="flex:0 0 auto">Timeframe<select id="tuneTf"><option value="5m">5m (fast)</option><option value="1m">1m (slow)</option><option value="1m,5m">1m + 5m, keep the better</option></select></label>
         <button class="btn pri grow" id="tuneAll">✨ Test &amp; tune all · 5 years</button>
       </div>
-      <div id="tuneOut" class="small mut" style="margin-top:6px">Runs “find best settings” on every strategy, applies what works and shows the profit on each line.</div>
+      <div id="tuneOut" class="small mut" style="margin-top:8px">Runs “find best settings” on every strategy, applies what works and shows the profit on each line.</div>
     </div>
     <div id="stratList"></div>
     <p class="hint">Each line: name · tested timeframe · profit over the test (after charges). <b class="up">✓</b> = still profitable on the last 30% of the period it never learned on, <b class="dn">✗</b> = not. Tap a line for details. Tick <b>Chart</b> to show a strategy's CALL/PUT signals live on the chart (with sound when a new candle closes with a signal). Signals are checked on <b>closed candles</b> only; entry is the next candle's open.</p>
@@ -239,6 +297,7 @@ td:first-child,th:first-child{text-align:left}
           <option value="180">Last 6 months</option><option value="365" selected>Last 1 year</option><option value="1095">Last 3 years</option><option value="1825">Last 5 years</option><option value="3650">Last 10 years (daily only)</option></select></label>
         <label class="lbl">Slippage per trade (points)<input id="btCost" type="number" step="any" value="2"></label>
       </div>
+      <details id="btMoney" class="fold"><summary><span>Charges &amp; size</span><span id="btMoneySum" class="mut small"></span></summary>
       <div class="row" style="margin-top:6px">
         <label class="lbl">Zerodha charges<select id="btInst"><option value="pts">None – points only</option><option value="opt">Options (buy CE / PE)</option><option value="fut">Futures</option><option value="eq">Intraday equity</option></select></label>
       </div>
@@ -252,7 +311,8 @@ td:first-child,th:first-child{text-align:left}
         <label class="lbl" id="btCapL">Starting capital ₹<input id="btCap" type="number" step="any" value="15000"></label>
         <label class="lbl" id="btMarginL">Margin per futures lot ₹<input id="btMargin" type="number" step="any" value="150000"></label>
       </div>
-      <div class="row" style="margin-top:8px">
+      </details>
+      <div class="row" style="margin-top:10px">
         <button class="btn pri grow" id="btRun">▶ Run backtest</button>
         <button class="btn" id="btAll">Compare all</button>
       </div>
@@ -297,10 +357,10 @@ td:first-child,th:first-child{text-align:left}
 </section>
 
 <nav class="tabs">
-  <button data-v="chart" class="on"><b>📈</b>Chart</button>
-  <button data-v="strats"><b>⚑</b>Strategies</button>
-  <button data-v="bt"><b>⏱</b>Backtest</button>
-  <button data-v="set"><b>⚙</b>Settings</button>
+  <button data-v="chart" class="on"><b><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/></svg></b>Chart</button>
+  <button data-v="strats"><b><svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></b>Strategies</button>
+  <button data-v="bt"><b><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg></b>Backtest</button>
+  <button data-v="set"><b><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></b>Settings</button>
 </nav>
 </div>
 
@@ -1042,7 +1102,7 @@ function alertFx(){
   if(S.sound && audioCtx){ try{ [0,0.18].forEach(function(dt){ var o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination); o.frequency.value=880; g.gain.value=0.08; o.start(audioCtx.currentTime+dt); o.stop(audioCtx.currentTime+dt+0.12); }); }catch(e){} }
   if(S.vib){ try{ navigator.vibrate&&navigator.vibrate([150,80,150]); }catch(e){} }
 }
-function setStatus(t){ $('status').textContent=t; }
+function setStatus(t){ var e=$('status'), k=/^live/.test(t)?'live':/error|retry|failed|no data/.test(t)?'err':/closed/.test(t)?'off':'wait'; e.className='st-'+k; e.innerHTML='<i></i>'+String(t).replace(/</g,'&lt;'); }
 window.__nlc=function(){ return {n:bars.length,first:bars.length?new Date((bars[0].time-IST)*1000).toISOString():null,loadingOld:loadingOld,noMoreOld:noMoreOld}; };
 
 // ---- loading ----
@@ -1714,7 +1774,7 @@ $('btInst').value=S.bt.inst||'opt'; $('btQty').value=S.bt.qty||75; $('btPrem').v
 $('btExp').value=S.bt.exp||'cur'; $('btTheta').checked=S.bt.theta!==false;
 $('btQtyP').value=S.bt.qtyP||S.bt.qty||75; $('btPremP').value=S.bt.premP||S.bt.prem||100; $('btDeltaP').value=S.bt.deltaP||S.bt.delta||0.5;
 $('btComp').checked=!!S.bt.comp; $('btCap').value=S.bt.cap||15000; $('btMargin').value=S.bt.margin||150000;
-function btInstUI(){ var k=$('btInst').value, cm=$('btComp').checked; $('btSides').style.display=k==='pts'?'none':''; Array.prototype.forEach.call(document.querySelectorAll('#btSides .optOnly'),function(x){ x.style.visibility=k==='opt'?'':'hidden'; }); Array.prototype.forEach.call(document.querySelectorAll('.optRow'),function(x){ x.style.display=k==='opt'?'':'none'; }); var sb=document.querySelectorAll('#btSides .side>b'); sb[0].textContent=k==='opt'?'CALL':'CALL / long'; sb[1].textContent=k==='opt'?'PUT':'PUT / short'; $('btCompRow').style.display=k==='pts'?'none':''; $('btCapL').style.display=cm?'':'none'; $('btMarginL').style.display=(cm&&k==='fut')?'':'none'; }
+function btInstUI(){ var k=$('btInst').value, cm=$('btComp').checked; $('btMoneySum').textContent=k==='pts'?'Points only':({opt:'Options',fut:'Futures',eq:'Equity'})[k]+' · qty '+$('btQty').value+(k==='opt'?' · ₹'+$('btPrem').value+' · '+($('btExp').value==='next'?'next week':'this week'):'')+(cm?' · compounding':''); $('btSides').style.display=k==='pts'?'none':''; Array.prototype.forEach.call(document.querySelectorAll('#btSides .optOnly'),function(x){ x.style.visibility=k==='opt'?'':'hidden'; }); Array.prototype.forEach.call(document.querySelectorAll('.optRow'),function(x){ x.style.display=k==='opt'?'':'none'; }); var sb=document.querySelectorAll('#btSides .side>b'); sb[0].textContent=k==='opt'?'CALL':'CALL / long'; sb[1].textContent=k==='opt'?'PUT':'PUT / short'; $('btCompRow').style.display=k==='pts'?'none':''; $('btCapL').style.display=cm?'':'none'; $('btMarginL').style.display=(cm&&k==='fut')?'':'none'; }
 btInstUI();
 $('btExp').addEventListener('change',function(){ var v=$('btExp').value==='next'?250:100; $('btPrem').value=v; $('btPremP').value=v; });
 ['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta','btQtyP','btPremP','btDeltaP','btComp','btCap','btMargin','btExp','btTheta'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value,qtyP:+$('btQtyP').value,premP:+$('btPremP').value,deltaP:+$('btDeltaP').value,comp:$('btComp').checked,cap:+$('btCap').value,margin:+$('btMargin').value}; save(); btInstUI(); }; });
@@ -1786,7 +1846,7 @@ function getBtData(sym,tf,days,prog){
   var p= up ? fetchUpstox(sym,tf,days,prog).then(function(b){ if(b.length<50) throw new Error('too little Upstox data'); return {b:b,src:'Upstox'}; }).catch(function(e){ console.warn('Upstox failed, using Moneycontrol',e); return mc().then(function(r){ r.upFail=true; return r; }); }) : mc();
   return p.then(function(r){ var Dx=cols(r.b); Dx.src=r.src; Dx.upFail=!!r.upFail; if(!r.upFail) dataCache[key]={D:Dx,at:Date.now()}; return Dx; });
 }
-function btProg(out,label){ return function(d,n){ out.innerHTML='<div class="card">'+label+' – getting history '+d+' / '+n+'…<div class="hint">First time for a symbol + timeframe takes a little while; after that it is saved on this device.</div></div>'; }; }
+function btProg(out,label){ return function(d,n){ out.innerHTML='<div class="card">'+label+' – getting history '+d+' / '+n+'…<div class="pbar"><i style="width:'+Math.round(100*d/Math.max(1,n))+'%"></i></div><div class="hint">First time for a symbol + timeframe takes a little while; after that it is saved on this device.</div></div>'; }; }
 function btSrcNote(Dx,cut,days){ var short=Dx.t[cut.i]>cut.c+7*86400; return ' · data: '+Dx.src+(short?' <span style="color:var(--warn)">(only available from '+dmy(Dx.t[cut.i])+(Dx.src==='Moneycontrol'&&Dx.upFail?' – long-history server busy, try again in a few minutes':'')+')</span>':''); }
 function statCards(st){
   var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; };
