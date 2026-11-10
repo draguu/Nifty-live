@@ -707,18 +707,21 @@ function patternArrs(D,s){
         cur.done=((mm+tfm)%5===0);
         var hh=H15[k15]; if(!hh) H15[k15]={o:D.o[i],h:D.h[i],l:D.l[i],c:D.c[i]}; else { if(D.h[i]>hh.h) hh.h=D.h[i]; if(D.l[i]<hh.l) hh.l=D.l[i]; hh.c=D.c[i]; } }
       M=D.cache[ck]={c5:c5,H:H15}; }
-    var rule=P.rule||'base2', wk=(P.wickPct!=null?+P.wickPct:15)/100, bd=(P.bodyPct!=null?+P.bodyPct:60)/100;
+    var rule=P.rule||'any', wk=(P.wickPct!=null?+P.wickPct:15)/100, bd=(P.bodyPct!=null?+P.bodyPct:60)/100;
     var sh=function(c){ var rg=Math.max(1e-9,c.h-c.l); return {up:c.c>c.o,dn:c.c<c.o,lw:(Math.min(c.o,c.c)-c.l)/rg,uw:(c.h-Math.max(c.o,c.c))/rg,body:Math.abs(c.c-c.o)/rg}; };
+    var RULES=rule==='any'?['base2','break15','rej15','inside15','eng15','pull15']:[rule];
     for(var q=1;q<M.c5.length;q++){ var c2=M.c5[q], c1=M.c5[q-1]; if(!c2.done||c1.day!==c2.day) continue;
       var Hc=M.H[c2.day*100+c2.b15-1], H2=M.H[c2.day*100+c2.b15-2]; if(!Hc) continue;
-      var a=sh(c1), b=sh(c2), lg=false, st=false;
+      var a=sh(c1), b=sh(c2), lg0=false, st0=false;
+      for(var ri=0;ri<RULES.length;ri++){ var rule=RULES[ri], lg=false, st=false;
       if(rule==='base2'){ lg=a.up&&b.up&&a.lw<=wk&&b.lw<=wk&&c2.c>Hc.h; st=a.dn&&b.dn&&a.uw<=wk&&b.uw<=wk&&c2.c<Hc.l; }
       else if(rule==='break15'){ lg=b.up&&b.body>=bd&&c2.c>Hc.h&&c1.c<=Hc.h; st=b.dn&&b.body>=bd&&c2.c<Hc.l&&c1.c>=Hc.l; }
       else if(rule==='rej15'){ st=c2.h>Hc.h&&c2.c<Hc.h&&b.uw>=bd*0.8; lg=c2.l<Hc.l&&c2.c>Hc.l&&b.lw>=bd*0.8; }
       else if(rule==='inside15'){ if(H2&&Hc.h<=H2.h&&Hc.l>=H2.l){ lg=c2.c>H2.h&&c1.c<=H2.h; st=c2.c<H2.l&&c1.c>=H2.l; } }
       else if(rule==='eng15'){ lg=a.dn&&b.up&&c2.c>c1.o&&c2.o<=c1.c&&Math.min(c1.l,c2.l)<=Hc.l; st=a.up&&b.dn&&c2.c<c1.o&&c2.o>=c1.c&&Math.max(c1.h,c2.h)>=Hc.h; }
       else if(rule==='pull15'){ var hb_=Math.abs(Hc.c-Hc.o)/Math.max(1e-9,Hc.h-Hc.l); lg=Hc.c>Hc.o&&hb_>=bd&&a.dn&&b.up&&c2.c>c1.h&&c2.l>Hc.l; st=Hc.c<Hc.o&&hb_>=bd&&a.up&&b.dn&&c2.c<c1.l&&c2.h<Hc.h; }
-      if(lg) L[c2.i1]=true; if(st) S[c2.i1]=true; }
+        lg0=lg0||lg; st0=st0||st; }
+      if(lg0) L[c2.i1]=true; if(st0) S[c2.i1]=true; }
     return {L:L,S:S}; }
   if(type==='fib_pa'){
     var tl=+(P.trend||20), tr=indCalc(D,'DTREND',{len:tl}).dir, src=P.fibSrc||'both', tol=(P.tolPct!=null?+P.tolPct:0.05)/100;
@@ -888,10 +891,8 @@ function stratLibrary(){
   ];
 }
 function stratLibrary2(){
-  var mk=function(name,rule,hold){ return {id:uid(),lib:true,name:name,pattern:'mtf_pa',pat:{rule:rule,wickPct:15,bodyPct:60},dir:'both',trigger:'first',long:[],short:[],
-    sl:{type:'atr',v:1.5,buf:0},tp:{type:'R',v:1},holdBars:hold||0,start:'09:30',end:'15:00',sq:'15:15',maxTrades:3,maxLossDay:0,stopAfterWin:false,onChart:false}; };
-  return [mk('5m/15m · two solid candles out of 15m','base2'),mk('5m/15m · strong break of 15m','break15'),mk('5m/15m · wick rejection at 15m (reversal)','rej15'),
-    mk('5m/15m · 15m inside-bar breakout','inside15'),mk('5m/15m · engulfing after 15m sweep (reversal)','eng15'),mk('5m/15m · pullback in strong 15m candle','pull15')];
+  return [{id:uid(),lib:true,name:'5m/15m · all 6 rules combined',pattern:'mtf_pa',pat:{rule:'any',wickPct:15,bodyPct:60},dir:'both',trigger:'first',long:[],short:[],
+    sl:{type:'atr',v:1.5,buf:0},tp:{type:'R',v:1},holdBars:0,start:'09:30',end:'15:00',sq:'15:15',maxTrades:3,maxLossDay:0,stopAfterWin:false,onChart:false}];
 }
 function fibPreset(){ return {id:uid(),name:'Fib levels + candle pattern (2 candles)',pattern:'fib_pa',pat:{trend:20,weeks:1,fibSrc:'both',tolPct:0.05,pset:'all'},dir:'both',trigger:'first',long:[],short:[],
     sl:{type:'candle',v:0,buf:2},tp:{type:'none',v:0},holdBars:2,start:'09:20',end:'15:00',sq:'15:15',maxTrades:3,maxLossDay:0,stopAfterWin:false,onChart:false}; }
@@ -927,7 +928,7 @@ function defaults(){
 var S;
 try{ S=JSON.parse(localStorage.getItem(LS)||'null'); }catch(e){ S=null; }
 if(!S||!S.strats) S=defaults();
-if(!S.lib2){ S.lib2=true; stratLibrary2().forEach(function(x){ if(!S.strats.some(function(y){ return y.name===x.name; })) S.strats.push(x); }); }
+if(!S.lib3){ S.lib3=true; S.lib2=true; S.strats=S.strats.filter(function(y){ return !(y.lib&&y.pattern==='mtf_pa'&&/^5m\/15m · /.test(y.name)&&y.name!=='5m/15m · all 6 rules combined'); }); stratLibrary2().forEach(function(x){ if(!S.strats.some(function(y){ return y.name===x.name; })) S.strats.push(x); }); }
 if(!S.lib1){ S.lib1=true; stratLibrary().forEach(function(x){ if(!S.strats.some(function(y){ return y.name===x.name; })) S.strats.push(x); }); }
 if(!S.fibAdded){ S.fibAdded=true; if(!S.strats.some(function(x){ return x.pattern==='fib_pa'; })) S.strats.push(fibPreset()); }
 function save(){ try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){} }
@@ -1441,7 +1442,7 @@ mtfUI();
 var SL={busy:false}, VZ=1;
 function vzScale(r){ if(r && r.priceRange && VZ!==1){ var a=r.priceRange.minValue, b=r.priceRange.maxValue, m=(a+b)/2, h=(b-a)/2*VZ; r={priceRange:{minValue:m-h,maxValue:m+h},margins:r.margins}; } return r; }
 function candAuto(orig){ return vzScale(orig()); }
-function ovAuto(orig){ return vzScale(orig()); }
+function ovAuto(orig){ return VZ===1?orig():null; }
 function hvToW(v){ return 400*Math.pow(0.05,v/100); }
 function slPaint(){ try{ var r=chart.timeScale().getVisibleLogicalRange(); if(!r) return; var w=Math.max(5,r.to-r.from), v=100*Math.log(400/w)/Math.log(20); SL.busy=true; $('zHr').value=Math.max(0,Math.min(100,v)); SL.busy=false; }catch(e){ SL.busy=false; } }
 $('zHr').oninput=function(){ var ts=chart.timeScale(), r=ts.getVisibleLogicalRange(); if(!r) return; var nw=hvToW(+this.value), right=r.to; SL.busy=true; ts.setVisibleLogicalRange({from:right-nw,to:right}); SL.busy=false; };
@@ -1723,9 +1724,9 @@ function condBuilder(s,side,box,c,idx,preset){
   box.innerHTML=''; box.appendChild(w);
 }
 function field(label,input){ var w=el('label',{class:'lbl'},label); w.appendChild(input); return w; }
-var M15_RULES=[['base2','Two solid 5m candles (no wick) closing outside the last 15m candle'],['break15','Strong 5m candle breaks the last 15m high / low'],['rej15','5m wick pokes the 15m high / low and closes back (reversal)'],['inside15','15m inside bar – 5m breakout of the mother candle'],['eng15','5m engulfing after sweeping the 15m high / low (reversal)'],['pull15','Strong 15m candle – 5m pullback then continuation']];
+var M15_RULES=[['any','All 6 rules combined (any one fires)'],['base2','Two solid 5m candles (no wick) closing outside the last 15m candle'],['break15','Strong 5m candle breaks the last 15m high / low'],['rej15','5m wick pokes the 15m high / low and closes back (reversal)'],['inside15','15m inside bar – 5m breakout of the mother candle'],['eng15','5m engulfing after sweeping the 15m high / low (reversal)'],['pull15','Strong 15m candle – 5m pullback then continuation']];
 function m15Row(o,cb){ o.pat=o.pat||{}; var r=el('div',{class:'row',style:'margin-top:6px'}), P=o.pat;
-  r.appendChild(field('5m / 15m rule',sel(M15_RULES,P.rule||'base2',function(v){P.rule=v;cb();})));
+  r.appendChild(field('5m / 15m rule',sel(M15_RULES,P.rule||'any',function(v){P.rule=v;cb();})));
   r.appendChild(field('Max wick % (solid candle)',num(P.wickPct!=null?P.wickPct:15,function(v){P.wickPct=v;cb();})));
   r.appendChild(field('Min body / wick %',num(P.bodyPct!=null?P.bodyPct:60,function(v){P.bodyPct=v;cb();})));
   return r; }
@@ -1944,7 +1945,7 @@ function optSpace(base,tf){
     P.push({n:'Min body %',vals:[0.02,0.05,0.1,0.15,0.2,0.3],set:setp('minBodyPct')});
   }
   if(pat==='orb_break') P.push({n:'ORB minutes',vals:[5,15,30,60],set:setp('orbMins')});
-  if(pat==='mtf_pa'){ P.push({n:'5m / 15m rule',vals:['base2','break15','rej15','inside15','eng15','pull15'],set:setp('rule')}); P.push({n:'Max wick %',vals:[5,10,15,25,35],set:setp('wickPct')}); P.push({n:'Min body %',vals:[40,50,60,70,80],set:setp('bodyPct')}); }
+  if(pat==='mtf_pa'){ P.push({n:'5m / 15m rule',vals:['any','base2','break15','rej15','inside15','eng15','pull15'],set:setp('rule')}); P.push({n:'Max wick %',vals:[5,10,15,25,35],set:setp('wickPct')}); P.push({n:'Min body %',vals:[40,50,60,70,80],set:setp('bodyPct')}); }
   if(pat==='fib_pa'){
     P.push({n:'Daily trend EMA',vals:[5,10,20,50],set:setp('trend')});
     P.push({n:'Weekly fib weeks',vals:[1,2,4],set:setp('weeks')});
@@ -1969,7 +1970,7 @@ function optDesc(s,tf){
   var p=s.pat||{}, pat=s.pattern||'none', out=[];
   if(pat==='opcr'||pat==='opcr_flip') out.push('Max gap '+(p.gapPct!=null?p.gapPct:10)+'% · size '+(p.rMin!=null?p.rMin:1)+'–'+(p.rMax!=null?p.rMax:1.3)+'× · min body '+(p.minBodyPct!=null?p.minBodyPct:0.02)+'%');
   if(pat==='orb_break') out.push('ORB '+(p.orbMins||15)+' min');
-  if(pat==='mtf_pa') out.push('Rule: '+((M15_RULES.filter(function(x){ return x[0]===(p.rule||'base2'); })[0]||[])[1]||p.rule)+' · wick ≤ '+(p.wickPct!=null?p.wickPct:15)+'% · body ≥ '+(p.bodyPct!=null?p.bodyPct:60)+'%');
+  if(pat==='mtf_pa') out.push('Rule: '+((M15_RULES.filter(function(x){ return x[0]===(p.rule||'any'); })[0]||[])[1]||p.rule)+' · wick ≤ '+(p.wickPct!=null?p.wickPct:15)+'% · body ≥ '+(p.bodyPct!=null?p.bodyPct:60)+'%');
   if(pat==='fib_pa') out.push('Trend EMA '+(p.trend||20)+'d · weekly fib '+(p.weeks||1)+'w · levels: '+({both:'prev day + weekly',day:'prev day',week:'weekly',confl:'where both agree'})[p.fibSrc||'both']+' · tolerance '+(p.tolPct!=null?p.tolPct:0.05)+'% · patterns: '+(p.pset||'all'));
   var sl=s.sl||{}, tp=s.tp||{};
   out.push('SL: '+({pattern:'pattern candles',candle:'signal candle',pts:sl.v+' pts',pct:sl.v+'%',atr:sl.v+'× ATR'})[sl.type||'pattern']+((sl.type==='pattern'||sl.type==='candle'||!sl.type)?' + '+(sl.buf||0)+' pts':'')+
