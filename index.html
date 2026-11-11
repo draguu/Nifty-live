@@ -78,10 +78,10 @@ small,.small{font-size:11px}
 .psl .tip{position:absolute;white-space:nowrap;font-size:11px;background:rgba(20,24,32,.92);border:1px solid var(--bd);border-radius:6px;padding:2px 6px;display:none;pointer-events:none}
 .psl.act .tip{display:block}.psl.v .tip{left:36px;top:50%;transform:translateY(-50%)}.psl.right.v .tip{left:auto;right:36px}.psl.h .tip{bottom:36px;left:50%;transform:translateX(-50%)}
 .psl .ic{position:absolute;font-size:10px;color:rgba(255,255,255,.45);pointer-events:none}.psl.v .ic{left:0;right:0;text-align:center}.psl.h .ic{top:7px}
-#zH{position:absolute;left:10px;bottom:34px;width:42%;max-width:220px;z-index:6;display:flex;align-items:center;gap:6px;background:rgba(30,36,48,.82);border:1px solid var(--bd);border-radius:16px;padding:4px 10px;font-size:14px;color:var(--mut)}
-#zH input{flex:1;min-width:0;accent-color:var(--acc);height:20px;margin:0}
-#zV{position:absolute;right:68px;top:50%;margin-top:-70px;width:30px;height:140px;z-index:6;background:rgba(30,36,48,.82);border:1px solid var(--bd);border-radius:16px}
-#zV input{position:absolute;left:50%;top:50%;width:116px;height:20px;margin:-10px 0 0 -58px;transform:rotate(-90deg);accent-color:var(--acc)}
+#zH{position:absolute;left:0;right:64px;bottom:0;height:34px;z-index:6;touch-action:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(0deg,rgba(41,98,255,.10),rgba(41,98,255,0));border-top:1px dashed rgba(120,140,180,.25)}
+#zV{position:absolute;right:0;top:34px;bottom:34px;width:62px;z-index:6;touch-action:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(270deg,rgba(41,98,255,.10),rgba(41,98,255,0));border-left:1px dashed rgba(120,140,180,.25)}
+#zH span,#zV span{font-size:10px;line-height:1.3;color:var(--mut);opacity:.55;pointer-events:none;text-align:center}
+#zH.on,#zV.on{background:rgba(41,98,255,.22)}
 #zoom button{width:34px;height:34px;border-radius:50%;background:rgba(30,36,48,.88);border:1px solid var(--bd);font-size:16px;padding:0}
 #status{position:absolute;left:44px;bottom:30px;z-index:5;font-size:10px;color:var(--mut);pointer-events:none}
 #toast{position:fixed;left:10px;right:10px;bottom:70px;z-index:50;background:#13233f;border:1px solid var(--acc);border-radius:10px;padding:10px;display:none;box-shadow:0 6px 20px #0008}
@@ -235,8 +235,8 @@ details>summary{cursor:pointer}
     <div id="zoom">
       <button id="zEnd" title="Go to latest">⇥</button>
     </div>
-    <div id="zH" title="Zoom time (candles shown)"><span>−</span><input type="range" id="zHr" min="0" max="100" value="40"><span>+</span></div>
-    <div id="zV" title="Zoom price (double-tap to reset)"><input type="range" id="zVr" min="0" max="100" value="50"></div>
+    <div id="zH" title="Drag left / right to zoom time · double-tap to reset"><span>◂ drag to zoom ▸</span></div>
+    <div id="zV" title="Drag up / down to zoom price · double-tap to reset"><span>▴<br>⇕<br>▾</span></div>
   </div>
   <div id="colBar" class="bar" style="display:none;flex-direction:column;align-items:stretch"><div id="colRows"></div></div>
   <div id="mtfBar" class="bar" style="display:none"><span class="small mut">Overlay (pick one or more):</span><span id="mtfBtns" class="row" style="gap:4px"></span><span class="grow"></span><button class="btn sm" id="mtfOff">Clear</button></div>
@@ -289,6 +289,7 @@ details>summary{cursor:pointer}
       </div>
       <div id="tuneOut" class="small mut" style="margin-top:8px">Runs “find best settings” on every strategy, applies what works and shows the profit on each line.</div>
     </div>
+    <p class="hint" id="profLbl" style="margin:0 0 6px"></p>
     <div id="stratList"></div>
     <p class="hint">Each line: name · tested timeframe · profit over the test (after charges). <b class="up">✓</b> = still profitable on the last 30% of the period it never learned on, <b class="dn">✗</b> = not. Tap a line for details. Tick <b>Chart</b> to show a strategy's CALL/PUT signals live on the chart (with sound when a new candle closes with a signal). Signals are checked on <b>closed candles</b> only; entry is the next candle's open.</p>
   </div>
@@ -1447,7 +1448,7 @@ $('zEnd').onclick=function(){ chart.timeScale().scrollToRealTime(); };
 // ---- symbol / tf ----
 function fillSym(sel,val){ sel.innerHTML=''; SYMS.forEach(function(x){ sel.appendChild(el('option',{value:x[1]},x[0])); }); if(!SYMS.some(function(x){return x[1]===val;})) sel.appendChild(el('option',{value:val},val.replace('idx:',''))); sel.value=val; }
 fillSym($('symSel'),S.sym);
-$('symSel').onchange=function(){ S.sym=this.value; save(); loadAll(); };
+$('symSel').onchange=function(){ S.sym=this.value; profLoad(S.sym); save(); loadAll(); try{ renderStratList(); profLabel(); }catch(e){} };
 $('symGo').onclick=function(){ var v=$('symTxt').value.trim().toUpperCase(); if(!v) return; S.sym=v; fillSym($('symSel'),v); save(); loadAll(); $('symTxt').value=''; };
 $('symTxt').onkeydown=function(e){ if(e.key==='Enter') $('symGo').click(); };
 Object.keys(TF).forEach(function(tf){ $('tfSel').appendChild(el('option',{value:tf},tf)); }); $('tfSel').value=S.tf;
@@ -1458,16 +1459,41 @@ $('btnMtf').onclick=function(){ var bar=$('mtfBar'), show=bar.style.display==='n
 $('btnCol').onclick=function(){ var b=$('colBar'), show=b.style.display==='none'; b.style.display=show?'flex':'none'; $('btnCol').className='btn sm'+(show?' on':''); colorsUI(); };
 $('mtfOff').onclick=function(){ S.mtf.on=false; S.mtf.tfs=[]; save(); mtfUI(); if(ovReq) ovReq(); $('mtfBar').style.display='none'; };
 mtfUI();
+// ---------- per-symbol strategy settings ----------
+// Every strategy keeps its own settings for each symbol (Nifty, Bank Nifty, Reliance…). Switching symbol swaps them in.
+var PROF_KEYS=['pattern','pat','dir','trigger','long','short','sl','tp','holdBars','start','end','sq','maxTrades','maxLossDay','stopAfterWin','sides','res'];
+function profSnap(s){ var o={}; PROF_KEYS.forEach(function(k){ if(s[k]!==undefined) o[k]=JSON.parse(JSON.stringify(s[k])); }); return o; }
+function profApply(s,p){ PROF_KEYS.forEach(function(k){ delete s[k]; }); var c=JSON.parse(JSON.stringify(p)); for(var k in c) s[k]=c[k]; }
+function profFor(s,sym){ // a copy of the strategy with sym's settings (no swap)
+  var c=JSON.parse(JSON.stringify(s)); if(S.profSym!==sym && s.bySym && s.bySym[sym]) profApply(c,s.bySym[sym]); delete c.bySym; return c; }
+function profLoad(sym){
+  if(!sym || S.profSym===sym) return false; var old=S.profSym;
+  S.strats.forEach(function(s){ s.bySym=s.bySym||{}; if(old) s.bySym[old]=profSnap(s);
+    if(s.bySym[sym]) profApply(s,s.bySym[sym]); else if(s.res && s.res.sym!==sym) delete s.res; });
+  S.profSym=sym; try{ btWork=null; btDirty=false; }catch(e){} save(); return true; }
+function profInit(){ if(S.profSym) return; // first run: each strategy's current settings belong to the symbol it was tested on
+  S.strats.forEach(function(s){ s.bySym=s.bySym||{}; var home=(s.res&&s.res.sym)||S.sym; s.bySym[home]=profSnap(s); });
+  S.profSym=S.sym; S.strats.forEach(function(s){ var home=(s.res&&s.res.sym)||S.sym; if(home!==S.sym){ /* keep settings as a start for this symbol, but its result was for another symbol */ delete s.res; } }); save(); }
+function profLabel(){ var b=$('profLbl'); if(b) b.innerHTML='Settings shown for <b>'+symName(S.profSym||S.sym)+'</b> – each symbol keeps its own. Change the symbol on the chart or in Backtest to switch.'; }
+profInit();
 var SL={busy:false}, VZ=1;
 function vzScale(r){ if(r && r.priceRange && VZ!==1){ var a=r.priceRange.minValue, b=r.priceRange.maxValue, m=(a+b)/2, h=(b-a)/2*VZ; r={priceRange:{minValue:m-h,maxValue:m+h},margins:r.margins}; } return r; }
 function candAuto(orig){ return vzScale(orig()); }
 function ovAuto(orig){ return VZ===1?orig():null; }
-function hvToW(v){ return 400*Math.pow(0.05,v/100); }
-function slPaint(){ try{ var r=chart.timeScale().getVisibleLogicalRange(); if(!r) return; var w=Math.max(5,r.to-r.from), v=100*Math.log(400/w)/Math.log(20); SL.busy=true; $('zHr').value=Math.max(0,Math.min(100,v)); SL.busy=false; }catch(e){ SL.busy=false; } }
-$('zHr').oninput=function(){ var ts=chart.timeScale(), r=ts.getVisibleLogicalRange(); if(!r) return; var nw=hvToW(+this.value), right=r.to; SL.busy=true; ts.setVisibleLogicalRange({from:right-nw,to:right}); SL.busy=false; };
+function slPaint(){}
 function vzApply(){ try{ cSeries.applyOptions({autoscaleInfoProvider:candAuto}); chart.priceScale('right').applyOptions({autoScale:true}); }catch(e){} }
-$('zVr').oninput=function(){ VZ=Math.pow(3,(50-(+this.value))/50); vzApply(); };
-$('zVr').ondblclick=function(){ this.value=50; VZ=1; vzApply(); };
+// touch strips: right edge = drag up/down for price zoom, bottom edge = drag left/right for time zoom; double-tap resets
+(function(){
+  function strip(id,onStart,onMove,onReset){ var z=$(id), st=null, lastTap=0;
+    z.addEventListener('pointerdown',function(e){ e.preventDefault(); z.setPointerCapture(e.pointerId); z.classList.add('on'); st={x:e.clientX,y:e.clientY,d:onStart()};
+      var now=Date.now(); if(now-lastTap<300){ onReset(); st=null; } lastTap=now; });
+    z.addEventListener('pointermove',function(e){ if(st) onMove(e.clientX-st.x,e.clientY-st.y,st.d); });
+    var end=function(){ st=null; z.classList.remove('on'); }; z.addEventListener('pointerup',end); z.addEventListener('pointercancel',end); }
+  strip('zV',function(){ return VZ; },function(dx,dy,v0){ VZ=Math.max(0.08,Math.min(6,v0*Math.exp(dy/160))); vzApply(); },function(){ VZ=1; vzApply(); });
+  strip('zH',function(){ var r=chart.timeScale().getVisibleLogicalRange(); return r?{w:r.to-r.from,to:r.to}:null; },
+    function(dx,dy,r0){ if(!r0) return; var w=Math.max(8,Math.min(3000,r0.w*Math.exp(-dx/140))); SL.busy=true; chart.timeScale().setVisibleLogicalRange({from:r0.to-w,to:r0.to}); SL.busy=false; },
+    function(){ var n=(cSeries.data()||[]).length; chart.timeScale().setVisibleLogicalRange({from:n-120,to:n+3}); });
+})();
 Object.keys(TF).forEach(function(tf){ var b=el('button',{class:'btn sm'+(tf===S.tf?' on':'')},tf); b.onclick=function(){ S.tf=tf; save(); mtfUI(); $('tfSel').value=tf; Array.prototype.forEach.call($('tfBtns').children,function(x){ x.className='btn sm'+(x.textContent===tf?' on':''); }); loadAll(); }; $('tfBtns').appendChild(b); });
 
 // ---------------- sheet ----------------
@@ -1605,7 +1631,8 @@ function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done){
 }
 function tuneAll(){
   if(TA.run){ TA.stop=true; return; }
-  var tfs=$('tuneTf').value.split(','), sym=$('btSym').value, days=1825, cost=+$('btCost').value||0, cfg=btCfg(), out=$('tuneOut'), list=S.strats.slice(), k=0, money=cfg.inst!=='pts'; cfg.comp=false;
+  if(profLoad(S.sym)){ renderStratList(); profLabel(); }
+  var tfs=$('tuneTf').value.split(','), sym=S.sym, days=1825, cost=+$('btCost').value||0, cfg=btCfg(), out=$('tuneOut'), list=S.strats.slice(), k=0, money=cfg.inst!=='pts'; cfg.comp=false;
   TA.run=true; TA.stop=false; $('tuneAll').textContent='■ Stop'; var okN=0, t00=Date.now();
   var pick=function(x){ return JSON.parse(JSON.stringify({pat:x.pat||{},sl:x.sl,tp:x.tp,start:x.start,end:x.end,sq:x.sq,maxTrades:x.maxTrades||0,maxLossDay:x.maxLossDay||0,stopAfterWin:!!x.stopAfterWin,holdBars:x.holdBars||0})); };
   function finish(msg){ TA.run=false; $('tuneAll').innerHTML='✨ Test &amp; tune all · 5 years';
@@ -1645,6 +1672,7 @@ function renderStratList(){
     var top=el('div',{class:'row srow'});
     top.appendChild(el('span',{class:'grow sname'},'<i class="sdot" style="background:'+stratColor(s)+'"></i>'+s.name));
     top.appendChild(el('span',{class:'sres'},resLine(s)));
+    var del=el('button',{class:'btn sm',title:'Delete strategy',style:'padding:2px 7px;min-width:0;color:var(--dn)'},'🗑'); del.onclick=function(e){ e.stopPropagation(); if(del.dataset.c){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); toast('Strategy deleted',1500); } else { del.dataset.c=1; del.textContent='Delete?'; setTimeout(function(){ if(del.isConnected){ del.dataset.c=''; del.textContent='🗑'; } },3000); } }; top.appendChild(del);
     var lab=el('label',{class:'chk'}); var cb=el('input',{type:'checkbox'}); cb.checked=!!s.onChart; cb.onchange=function(){ s.onChart=cb.checked; save(); renderSignals(); }; lab.appendChild(cb); lab.appendChild(document.createTextNode('Chart')); top.appendChild(lab);
     c.appendChild(top);
     var det=el('div',{class:'sdet',style:'display:'+(stOpen[s.id]?'block':'none')});
@@ -1876,7 +1904,7 @@ function btAutoInst(){ var st=isStock($('btSym').value), k=$('btInst').value;
 var _btInstUI=btInstUI; btInstUI=function(){ _btInstUI(); btEqUI(); };
 $('btLev').value=S.bt.lev||5;
 btAutoInst();
-$('btSym').addEventListener('change',function(){ btAutoInst(); $('btInst').onchange&&$('btInst').onchange(); });
+$('btSym').addEventListener('change',function(){ if(profLoad(this.value)){ try{ fillBtStrat(); btQuick(); renderSignals(); }catch(e){} toast('Loaded strategy settings for '+symName(this.value),2000); } btAutoInst(); $('btInst').onchange&&$('btInst').onchange(); });
 $('btLev').addEventListener('change',function(){ S.bt.lev=+this.value||5; save(); btEqUI(); });
 $('btCap').addEventListener('input',btEqUI);
 $('btExp').addEventListener('change',function(){ var v=$('btExp').value==='next'?250:100; $('btPrem').value=v; $('btPremP').value=v; });
@@ -2217,7 +2245,7 @@ $('setVol').checked=!!S.vol; $('setVol').onchange=function(){ S.vol=this.checked
 $('expBtn').onclick=function(){ var txt=JSON.stringify({strats:S.strats,inds:S.inds}); try{ navigator.clipboard.writeText(txt).then(function(){ toast('Copied '+S.strats.length+' strategies to clipboard',3000); },function(){ $('impTxt').style.display='block'; $('impTxt').value=txt; toast('Copy the text below',3000); }); }catch(e){ $('impTxt').style.display='block'; $('impTxt').value=txt; } };
 $('impBtn').onclick=function(){ $('impTxt').style.display='block'; $('impDo').style.display='inline-block'; };
 $('impDo').onclick=function(){ try{ var j=JSON.parse($('impTxt').value); if(j.strats){ j.strats.forEach(function(s){ s.id=uid(); S.strats.push(s); }); } if(j.inds) S.inds=j.inds; save(); renderStratList(); loadAllKeep(); toast('Imported',2500); }catch(e){ toast('Could not read that text',3000); } };
-$('bkBtn').onclick=function(){ if(this.dataset.c){ S.strats=backupStrats(); S.lib1=S.lib2=S.lib3=S.fibAdded=true; save(); renderStratList(); try{ renderSignals(); }catch(e){} this.dataset.c=''; this.textContent='✓ Restored '+S.strats.length+' strategies'; toast('Backup restored – your current strategies were replaced',3500); } else { this.dataset.c=1; this.textContent='Tap again – replaces your current strategies'; } };
+$('bkBtn').onclick=function(){ if(this.dataset.c){ S.strats=backupStrats(); S.lib1=S.lib2=S.lib3=S.fibAdded=true; S.profSym=null; profInit(); save(); renderStratList(); try{ renderSignals(); }catch(e){} this.dataset.c=''; this.textContent='✓ Restored '+S.strats.length+' strategies'; toast('Backup restored – your current strategies were replaced',3500); } else { this.dataset.c=1; this.textContent='Tap again – replaces your current strategies'; } };
 $('resetBtn').onclick=function(){ if(this.dataset.c){ S=defaults(); save(); location.reload(); } else { this.dataset.c=1; this.textContent='Tap again to confirm reset'; } };
 
 // ---------------- tabs ----------------
@@ -2231,7 +2259,7 @@ function ppStart(){
   var amt=+$('ppAmt').value||0, ids=Array.prototype.filter.call(document.querySelectorAll('#ppStrats input'),function(x){ return x.checked; }).map(function(x){ return x.value; });
   if(amt<=0){ toast('Enter the amount you want to paper trade with',3000); return; }
   if(!ids.length){ toast('Pick at least one strategy',3000); return; }
-  var strats=ids.map(function(id){ var x=S.strats.find(function(y){ return y.id===id; }); var c=JSON.parse(JSON.stringify(x)); c.color=stratColor(x); return c; });
+  var strats=ids.map(function(id){ var x=S.strats.find(function(y){ return y.id===id; }); var c=profFor(x,$('ppSym').value); c.color=stratColor(x); return c; });
   var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var stk=isStock($('ppSym').value); cfg.inst=stk?'eq':(cfg.inst==='eq'?'opt':cfg.inst); cfg.lev=+S.bt.lev||5; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||100;
   cfg.call.qty=cfg.put.qty=q; cfg.call.prem=cfg.put.prem=pr; cfg.exp=$('ppExp').value;
   S.paper={on:true,start:nowIST(),sym:$('ppSym').value,tf:$('ppTf').value,cost:+$('btCost').value||0,amt:amt,cfg:cfg,strats:strats,seen:null};
@@ -2336,7 +2364,8 @@ function showView(v){
   ['chart','strats','bt','paper','set'].forEach(function(x){ $('v-'+x).className='view'+(x===v?' on':''); });
   Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.className=b.dataset.v===v?'on':''; });
   if(v==='strats') renderStratList();
-  if(v==='bt'){ fillBtStrat(); btQuick(); }
+  if(v==='bt'){ profLoad($('btSym').value); fillBtStrat(); btQuick(); }
+  if(v==='chart'||v==='strats'){ if(profLoad(S.sym)){ try{ renderSignals(); }catch(e){} } if(v==='strats'){ renderStratList(); profLabel(); } }
   if(v==='paper') ppRender();
 }
 Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.onclick=function(){ showView(b.dataset.v); }; });
