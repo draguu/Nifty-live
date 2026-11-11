@@ -315,6 +315,7 @@ details>summary{cursor:pointer}
         <label class="lbl">Zerodha charges<select id="btInst"><option value="pts">None – points only</option><option value="opt">Options (buy CE / PE)</option><option value="fut">Futures</option><option value="eq">Intraday equity</option></select></label>
       </div>
       <div class="row optRow" style="margin-top:6px"><label class="lbl">Option expiry<select id="btExp"><option value="cur">This week (cheaper, fast decay)</option><option value="next">Next week (₹200–300, slow decay)</option></select></label><label class="lbl" style="flex-direction:row;align-items:center;gap:6px;align-self:flex-end"><input id="btTheta" type="checkbox" style="width:auto" checked> Include time decay</label></div>
+      <p class="hint" id="btEqHint" style="display:none;margin:6px 0 0"></p>
       <div id="btSides">
         <div class="side"><b class="up">CALL</b><label class="lbl">Qty<input id="btQty" type="number" step="1" value="75"></label><label class="lbl optOnly">Premium ₹<input id="btPrem" type="number" step="any" value="100"></label><label class="lbl optOnly">Delta<input id="btDelta" type="number" step="0.05" value="0.5"></label></div>
         <div class="side"><b class="dn">PUT</b><label class="lbl">Qty<input id="btQtyP" type="number" step="1" value="75"></label><label class="lbl optOnly">Premium ₹<input id="btPremP" type="number" step="any" value="100"></label><label class="lbl optOnly">Delta<input id="btDeltaP" type="number" step="0.05" value="0.5"></label></div>
@@ -322,6 +323,7 @@ details>summary{cursor:pointer}
       <div class="row" id="btCompRow" style="margin-top:6px;align-items:flex-end">
         <label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btComp" type="checkbox" style="width:auto"> Add 1 lot when profit can buy 2 more lots</label>
         <label class="lbl" id="btCapL">Starting capital ₹<input id="btCap" type="number" step="any" value="15000"></label>
+        <label class="lbl" id="btLevL">Intraday leverage (MIS) ×<input id="btLev" type="number" step="any" value="5"></label>
         <label class="lbl" id="btMarginL">Margin per futures lot ₹<input id="btMargin" type="number" step="any" value="150000"></label>
       </div>
       </details>
@@ -1562,7 +1564,10 @@ function dirSides(base){ var d=base.dir||'both'; return d==='long'?['long']:d===
 // round brings no gain, then restarts from shuffled versions of the best found, until 3 restarts in a row can't beat it.
 function Climber(P,ev,score,start,passes,deep){
   var cl=function(x){ return JSON.parse(JSON.stringify(x)); }, o={runs:1,pool:[],pass:0,pi:0,vi:0,imp:false,restarts:0,noGain:0,deep:deep};
-  o.cur=start; o.curR=ev(start); o.curS=score(o.curR); poolAdd(o.pool,o.cur,o.curR,o.curS); o.best=o.cur; o.bestR=o.curR; o.bestS=o.curS;
+  o.startR=ev(start); var floor=(deep&&o.startR.A.perMon>0)?0.8*o.startR.A.perMon:0, sc0=score;
+  // highest win % may not cost profit: settings earning under 80% of the current ones' monthly profit are rejected
+  score=function(r){ var v=sc0(r); return (floor && v>-1e14 && r.A.perMon<floor)? -1e15+r.A.perMon : v; };
+  o.cur=start; o.curR=o.startR; o.curS=score(o.curR); poolAdd(o.pool,o.cur,o.curR,o.curS); o.best=o.cur; o.bestR=o.curR; o.bestS=o.curS;
   o.step=function(){
     var p=P[o.pi], c=cl(o.cur); p.set(c,p.vals[o.vi]); var r=ev(c), sc=score(r); o.runs++; poolAdd(o.pool,c,r,sc);
     if(sc>o.curS){ o.cur=c; o.curR=r; o.curS=sc; o.imp=true; if(sc>o.bestS){ o.best=c; o.bestR=r; o.bestS=sc; o.noGain=-1; } }
@@ -1593,7 +1598,7 @@ function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done){
     var tEnd=performance.now()+150;
     while(performance.now()<tEnd){
       if(TA.stop) return done(null);
-      if(C.step()){ res[sides[si]]=poolPick(C.pool,C.cur,C.curR,C.curS); runs0+=C.runs; si++; if(si>=sides.length) return done({res:res,runs:runs0,ev:ev}); startSide(); }
+      if(C.step()){ res[sides[si]]=poolPick(C.pool,C.cur,C.curR,C.curS); res[sides[si]].before=C.startR; runs0+=C.runs; si++; if(si>=sides.length) return done({res:res,runs:runs0,ev:ev}); startSide(); }
     }
     tick(runs0+C.runs,sides[si]==='short'?1:0,C.bestWin()); setTimeout(step,0);
   })();
@@ -1622,7 +1627,7 @@ function tuneAll(){
       getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){
         tuneCore(orig,Dx,tf,days,cost,cfg,$('tuneObj').value,tf==='1m'?1:2,function(runs,si,bw){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'+(bw!=null?' · best win so far '+fmt(bw,1)+'%':''); },function(R){
           if(!R) return finish('Stopped.');
-          var g=function(x){ return x && x.held && x.r.B.net>0; }, gL=g(R.res.long), gS=g(R.res.short), nw=null;
+          var g=function(x){ return x && x.held && x.r.B.net>0 && !($('tuneObj').value==='winpct' && x.before && x.before.F.perMon>0 && x.r.F.perMon<0.8*x.before.F.perMon); }, gL=g(R.res.long), gS=g(R.res.short), nw=null;
           if(gL||gS){ nw=JSON.parse(JSON.stringify(orig)); nw.sides={long:pick(R.res.long?R.res.long.s:sideS(orig,1)),short:pick(R.res.short?R.res.short.s:sideS(orig,-1))}; nw.dir=gL&&gS?'both':gL?'long':'short'; }
           var st=R.ev(nw||orig); cands.push({tf:tf,good:!!nw&&st.B.net>0,nw:nw,st:st}); setTimeout(tfNext,0);
         });
@@ -1857,11 +1862,27 @@ $('btExp').value=S.bt.exp||'cur'; $('btTheta').checked=S.bt.theta!==false;
 $('btQtyP').value=S.bt.qtyP||S.bt.qty||75; $('btPremP').value=S.bt.premP||S.bt.prem||100; $('btDeltaP').value=S.bt.deltaP||S.bt.delta||0.5;
 $('btComp').checked=!!S.bt.comp; $('btCap').value=S.bt.cap||15000; $('btMargin').value=S.bt.margin||150000;
 function btInstUI(){ var k=$('btInst').value, cm=$('btComp').checked; $('btMoneySum').textContent=k==='pts'?'Points only':({opt:'Options',fut:'Futures',eq:'Equity'})[k]+' · qty '+$('btQty').value+(k==='opt'?' · ₹'+$('btPrem').value+' · '+($('btExp').value==='next'?'next week':'this week'):'')+(cm?' · compounding':''); $('btSides').style.display=k==='pts'?'none':''; Array.prototype.forEach.call(document.querySelectorAll('#btSides .optOnly'),function(x){ x.style.visibility=k==='opt'?'':'hidden'; }); Array.prototype.forEach.call(document.querySelectorAll('.optRow'),function(x){ x.style.display=k==='opt'?'':'none'; }); var sb=document.querySelectorAll('#btSides .side>b'); sb[0].textContent=k==='opt'?'CALL':'CALL / long'; sb[1].textContent=k==='opt'?'PUT':'PUT / short'; $('btCompRow').style.display=k==='pts'?'none':''; $('btCapL').style.display=cm?'':'none'; $('btMarginL').style.display=(cm&&k==='fut')?'':'none'; }
-btInstUI();
+function isStock(sym){ return !!sym && sym.indexOf('idx:')!==0; }
+function btEqUI(){ var eq=$('btInst').value==='eq', cm=$('btComp').checked;
+  Array.prototype.forEach.call(document.querySelectorAll('#btSides'),function(x){ if(eq) x.style.display='none'; });
+  $('btLevL').style.display=eq?'':'none'; if(eq) $('btCapL').style.display=''; $('btEqHint').style.display=eq?'':'none';
+  if(eq){ var cap=+$('btCap').value||0, lev=+$('btLev').value||5; $('btEqHint').innerHTML='Equity: no lots – every trade uses '+(cm?'your current capital':'your starting capital')+' × '+lev+' (MIS leverage). E.g. ₹'+Math.round(cap).toLocaleString('en-IN')+' × '+lev+' buys ₹'+Math.round(cap*lev).toLocaleString('en-IN')+' of the stock. Tick “Add 1 lot…” to let profits grow the size.';
+    $('btMoneySum').textContent='Equity · ₹'+Math.round(cap).toLocaleString('en-IN')+' × '+lev+(cm?' · compounding':''); } }
+// a stock picks equity, an index picks options – and the size fields follow
+function btAutoInst(){ var st=isStock($('btSym').value), k=$('btInst').value;
+  if(st && k!=='eq' && k!=='pts'){ $('btInst').value='eq'; toast('Stock selected – switched to intraday equity sizing',2500); }
+  else if(!st && k==='eq'){ $('btInst').value='opt'; toast('Index selected – switched to options',2500); }
+  btInstUI(); btEqUI(); }
+var _btInstUI=btInstUI; btInstUI=function(){ _btInstUI(); btEqUI(); };
+$('btLev').value=S.bt.lev||5;
+btAutoInst();
+$('btSym').addEventListener('change',function(){ btAutoInst(); $('btInst').onchange&&$('btInst').onchange(); });
+$('btLev').addEventListener('change',function(){ S.bt.lev=+this.value||5; save(); btEqUI(); });
+$('btCap').addEventListener('input',btEqUI);
 $('btExp').addEventListener('change',function(){ var v=$('btExp').value==='next'?250:100; $('btPrem').value=v; $('btPremP').value=v; });
-['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta','btQtyP','btPremP','btDeltaP','btComp','btCap','btMargin','btExp','btTheta'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value,qtyP:+$('btQtyP').value,premP:+$('btPremP').value,deltaP:+$('btDeltaP').value,comp:$('btComp').checked,cap:+$('btCap').value,margin:+$('btMargin').value}; save(); btInstUI(); }; });
+['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta','btQtyP','btPremP','btDeltaP','btComp','btCap','btMargin','btExp','btTheta'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value,qtyP:+$('btQtyP').value,premP:+$('btPremP').value,deltaP:+$('btDeltaP').value,comp:$('btComp').checked,cap:+$('btCap').value,margin:+$('btMargin').value,lev:+$('btLev').value||5}; save(); btInstUI(); }; });
 function btCfg(){ var sd=function(q,p,d){ return {qty:Math.max(1,+$(q).value||1),prem:+$(p).value||100,delta:+$(d).value||0.5}; };
-  return {inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,call:sd('btQty','btPrem','btDelta'),put:sd('btQtyP','btPremP','btDeltaP'),comp:$('btInst').value!=='pts'&&$('btComp').checked,cap:Math.max(0,+$('btCap').value||0),margin:Math.max(1,+$('btMargin').value||1)}; }
+  return {inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,call:sd('btQty','btPrem','btDelta'),put:sd('btQtyP','btPremP','btDeltaP'),comp:$('btInst').value!=='pts'&&$('btComp').checked,cap:Math.max(0,+$('btCap').value||0),margin:Math.max(1,+$('btMargin').value||1),lev:Math.max(1,+$('btLev').value||5)}; }
 function zCharges(kind,buy,sell){ var b,stt,tx,st;
   if(kind==='opt'){ b=40; stt=0.0015*sell; tx=0.0003553*(buy+sell); st=0.00003*buy; }
   else if(kind==='fut'){ b=Math.min(20,0.0003*buy)+Math.min(20,0.0003*sell); stt=0.0005*sell; tx=0.0000183*(buy+sell); st=0.00002*buy; }
@@ -1869,36 +1890,44 @@ function zCharges(kind,buy,sell){ var b,stt,tx,st;
   var sebi=(buy+sell)*1e-6, gst=0.18*(b+tx+sebi); return {total:b+stt+tx+st+sebi+gst,brok:b,stt:stt,tx:tx,stamp:st,sebi:sebi,gst:gst}; }
 function sideCfg(cfg,t){ return t.side>0?cfg.call:cfg.put; }
 function lotCost(cfg,t){ var sc=sideCfg(cfg,t); return cfg.inst==='opt'? sc.prem*sc.qty : cfg.inst==='fut'? cfg.margin : t.entry*sc.qty; }
+// equity: no lots – buy as many shares as the capital allows with intraday (MIS) leverage, re-sized every trade
+function eqShares(cfg,cap,price){ return price>0?Math.floor(Math.max(0,cap)*(cfg.lev||5)/price):0; }
 // days left to expiry (calendar days, from IST time t). Nifty weekly expiry: Thursday until Aug 2025, Tuesday from Sep 2025.
 function daysToExpiry(t,next){ var day=Math.floor(t/86400), wd=new Date(day*86400000).getUTCDay(), E= day<20332?4:2; // 20332 = 2025-09-01
   var dd=(E-wd+7)%7; if(next) dd+=7; var expT=(day+dd)*86400+930*60; return Math.max(0.02,(expT-t)/86400); }
 function optDecay(cfg,t,P){ if(!cfg.theta) return 0; var nx=cfg.exp==='next', T0=daysToExpiry(t.t,nx), T1=Math.max(0.01,T0-Math.max(0,(t.te-t.t))/86400); return P*(1-Math.sqrt(T1/T0)); }
 function rupeeTrades(tr,cfg){
   var agg={brok:0,stt:0,tx:0,stamp:0,sebi:0,gst:0,total:0}, cap=cfg.cap, lots=1, maxLots=1, bust=null, ups=0, downs=0;
-  tr.forEach(function(t){ t.lots=1; t.skip=false; if(t.why==='Open'){ t.rs=0; t.chg=0; return; }
-    if(cfg.comp){ var lc=lotCost(cfg,t);
+  tr.forEach(function(t){ t.lots=1; t.skip=false; if(cfg.inst==='eq') t.q=eqShares(cfg,cfg.comp?cap:cfg.cap,t.entry);
+    if(t.why==='Open'){ t.rs=0; t.chg=0; return; }
+    if(cfg.inst==='eq'){ if(t.q<1){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; } }
+    else if(cfg.comp){ var lc=lotCost(cfg,t);
       if(bust || cap<lc){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; }
       if(cap<lots*lc){ lots=Math.max(1,Math.floor(cap/lc)); downs++; }
       else if(cap>=(lots+2)*lc){ lots++; ups++; }
       if(lots>maxLots) maxLots=lots; t.lots=lots; }
-    var sc=sideCfg(cfg,t), q=sc.qty*t.lots, buy, sell, gross;
+    var sc=sideCfg(cfg,t), q=cfg.inst==='eq'?t.q:sc.qty*t.lots, buy, sell, gross;
     if(cfg.inst==='opt'){ var P=sc.prem, dk=optDecay(cfg,t,P), out=Math.max(0.05,P+t.pts*sc.delta-dk); t.decay=dk; buy=P*q; sell=out*q; gross=sell-buy; }
     else { if(t.side>0){ buy=t.entry*q; sell=t.exit*q; } else { sell=t.entry*q; buy=t.exit*q; } gross=t.pts*q; }
     var c=zCharges(cfg.inst,buy,sell); t.chg=c.total; t.rs=gross-c.total; cap+=t.rs; t.cap=cap; for(var k in agg) agg[k]+=c[k]; });
   var st=btStats(tr.map(function(t){ return {pts:t.rs,why:t.skip?'Open':t.why,t:t.t}; })); st.chg=agg; st.gross=st.net+agg.total;
-  if(cfg.comp){ st.comp={start:cfg.cap,end:cap,maxLots:maxLots,lots:lots,ups:ups,downs:downs,bust:bust,skipped:tr.filter(function(t){return t.skip;}).length}; }
+  if(cfg.inst==='eq'){ var qs=tr.filter(function(t){ return t.q>0; }).map(function(t){ return t.q; }); st.eq={start:cfg.cap,end:cap,minQ:qs.length?Math.min.apply(null,qs):0,maxQ:qs.length?Math.max.apply(null,qs):0,bust:bust,skipped:tr.filter(function(t){return t.skip;}).length}; }
+  if(cfg.comp && cfg.inst!=='eq'){ st.comp={start:cfg.cap,end:cap,maxLots:maxLots,lots:lots,ups:ups,downs:downs,bust:bust,skipped:tr.filter(function(t){return t.skip;}).length}; }
   var sideSt=function(sd){ var T=tr.filter(function(t){ return t.side===sd; }); var x=btStats(T.map(function(t){ return {pts:t.rs,why:t.skip?'Open':t.why,t:t.t}; })); return x; };
   st.callSt=sideSt(1); st.putSt=sideSt(-1);
   return st;
 }
 function rsCard(rs,cfg){
   var c=function(l,v,cls){ return '<div class="stat"><div>'+l+'</div><b class="'+(cls||'')+'">'+v+'</b></div>'; }, R=function(x){ return '₹'+Math.round(x).toLocaleString('en-IN'); }, ud=function(x){ return x>=0?'up':'dn'; };
-  var sd=function(n,x){ return cfg.inst==='opt'? n+' '+x.qty+' × ₹'+x.prem+' Δ'+x.delta : n+' '+x.qty; };
+  var sd=function(n,x){ return cfg.inst==='opt'? n+' '+x.qty+' × ₹'+x.prem+' Δ'+x.delta : cfg.inst==='eq'? '' : n+' '+x.qty; };
   var cn=cfg.inst==='opt'?['CALL','PUT']:['Long','Short'];
-  var h='<div class="card" data-k="money"><h4 class="chd" style="margin-top:0">₹ result · '+({opt:'options',fut:'futures',eq:'equity'})[cfg.inst]+' · '+sd(cn[0],cfg.call)+' · '+sd(cn[1],cfg.put)+'</h4><div class="stats">'+
+  var h='<div class="card" data-k="money"><h4 class="chd" style="margin-top:0">₹ result · '+({opt:'options',fut:'futures',eq:'equity'})[cfg.inst]+(cfg.inst==='eq'?' · ₹'+Math.round(cfg.cap).toLocaleString('en-IN')+' × '+(cfg.lev||5):' · '+sd(cn[0],cfg.call)+' · '+sd(cn[1],cfg.put))+'</h4><div class="stats">'+
     c('Net profit',R(rs.net),ud(rs.net))+c('Charges',R(rs.chg.total),'dn')+c('Before charges',R(rs.gross),ud(rs.gross))+
     c('Win rate',fmt(rs.win,1)+'%')+c('Profit factor',fmt(rs.pf),rs.pf>=1?'up':'dn')+c('Max drawdown',R(rs.dd),'dn')+
-    c(cn[0]+' net · '+rs.callSt.n,R(rs.callSt.net),ud(rs.callSt.net))+c(cn[1]+' net · '+rs.putSt.n,R(rs.putSt.net),ud(rs.putSt.net))+c('Avg / trade',R(rs.exp),ud(rs.exp))+'</div>';
+    (cfg.inst==='eq'?'':'')+c(cn[0]+' net · '+rs.callSt.n,R(rs.callSt.net),ud(rs.callSt.net))+c(cn[1]+' net · '+rs.putSt.n,R(rs.putSt.net),ud(rs.putSt.net))+c('Avg / trade',R(rs.exp),ud(rs.exp))+'</div>';
+  if(rs.eq){ h=h.replace(' ·  · ',' · ');
+    h+='<div class="stats" style="margin-top:6px">'+c('Capital',R(rs.eq.start)+' → '+R(rs.eq.end),ud(rs.eq.end-rs.eq.start))+c('Return',fmt(rs.eq.start?100*(rs.eq.end-rs.eq.start)/rs.eq.start:0,1)+'%',ud(rs.eq.end-rs.eq.start))+c('Shares / trade',rs.eq.minQ===rs.eq.maxQ?rs.eq.minQ:rs.eq.minQ+' – '+rs.eq.maxQ)+'</div>'+
+      '<p class="hint" style="margin:6px 0 0">Each trade buys (or short-sells) as many shares as '+(cfg.comp?'the current capital':'the starting capital')+' × '+(cfg.lev||5)+' (MIS leverage) can pay for.'+(rs.eq.bust?' <b class="dn">Capital couldn’t buy 1 share from '+dmy(rs.eq.bust)+' – '+rs.eq.skipped+' trades skipped.</b>':'')+'</p>'; }
   if(rs.comp){ var lcTxt=cfg.inst==='opt'?R(cfg.call.prem*cfg.call.qty)+' CALL / '+R(cfg.put.prem*cfg.put.qty)+' PUT':cfg.inst==='fut'?R(cfg.margin)+' margin':'entry × qty';
     h+='<div class="stats" style="margin-top:6px">'+c('Capital',R(rs.comp.start)+' → '+R(rs.comp.end),ud(rs.comp.end-rs.comp.start))+c('Return',fmt(rs.comp.start?100*(rs.comp.end-rs.comp.start)/rs.comp.start:0,1)+'%',ud(rs.comp.end-rs.comp.start))+c('Lots now / max',rs.comp.lots+' / '+rs.comp.maxLots)+'</div>'+
       '<p class="hint" style="margin:6px 0 0">1 lot = '+lcTxt+'. A lot is added when capital covers 2 more lots; lots are cut when it can\'t cover the ones in use ('+rs.comp.ups+' added / '+rs.comp.downs+' cut).'+(rs.comp.bust?' <b class="dn">Capital fell below 1 lot on '+dmy(rs.comp.bust)+' – '+rs.comp.skipped+' later trades skipped.</b>':'')+'</p>'; }
@@ -2059,17 +2088,17 @@ function btOptimize(){
       var tEnd=performance.now()+120;
       while(performance.now()<tEnd){
         if(optStop) return finish();
-        if(C.step()){ res[sides[si][0]]=poolPick(C.pool,C.cur,C.curR,C.curS); runs0+=C.runs; si++; if(si>=sides.length){ runs=runs0; return finish(); } startSide(); }
+        if(C.step()){ res[sides[si][0]]=poolPick(C.pool,C.cur,C.curR,C.curS); res[sides[si][0]].before=C.startR; runs0+=C.runs; si++; if(si>=sides.length){ runs=runs0; return finish(); } startSide(); }
       }
       draw(); setTimeout(step,0);
     }
     function finish(){
-      if(optStop){ runs=runs0+C.runs; if(sides[si] && !res[sides[si][0]]){ var pp=poolPick(C.pool,C.best,C.bestR,C.bestS); pp.partial=true; res[sides[si][0]]=pp; } }
+      if(optStop){ runs=runs0+C.runs; if(sides[si] && !res[sides[si][0]]){ var pp=poolPick(C.pool,C.best,C.bestR,C.bestS); pp.partial=true; pp.before=C.startR; res[sides[si][0]]=pp; } }
       var R=function(x){ return money?'₹'+Math.round(x).toLocaleString('en-IN'):fmt(x,1)+' pts'; };
       var row=function(l,x){ return '<tr><td>'+l+'</td><td>'+fmt(x.tradesMon,1)+'</td><td>'+fmt(x.winsMon,1)+'</td><td>'+fmt(x.win,0)+'%</td><td>'+fmt(x.pf)+'</td><td class="'+(x.perMon>=0?'up':'dn')+'">'+R(x.perMon)+'</td><td>'+fmt(x.p30,0)+'%</td></tr>'; };
       // apply to the strategy: each side gets its own settings; a side that lost money on the check period is switched off
       var pick=function(x){ return JSON.parse(JSON.stringify({pat:x.pat||{},sl:x.sl,tp:x.tp,start:x.start,end:x.end,sq:x.sq,maxTrades:x.maxTrades||0,maxLossDay:x.maxLossDay||0,stopAfterWin:!!x.stopAfterWin,holdBars:x.holdBars||0})); };
-      var good=function(x){ return x && x.held && x.r.B.net>0; };
+      var good=function(x){ return x && x.held && x.r.B.net>0 && !(obj==='winpct' && x.before && x.before.F.perMon>0 && x.r.F.perMon<0.8*x.before.F.perMon); };
       var gL=good(res.long), gS=good(res.short), applied=false, undo=orig?JSON.parse(JSON.stringify(orig)):null;
       var applyNow=function(force){ var src=JSON.parse(JSON.stringify(btWork&&btWork.id===orig.id?btWork:orig)), nw=src;
         var L=res.long?res.long.s:sideS(src,1), Sh=res.short?res.short.s:sideS(src,-1);
@@ -2083,7 +2112,7 @@ function btOptimize(){
         h+='<h4 class="'+(k==='long'?'up':'dn')+'" style="margin-top:12px">'+nm+(applied?(g?' – applied':' – switched OFF (lost money on the check period)'):(x.held?'':' – best found, but it lost money on the check period'))+(x.partial?' (stopped early)':'')+'</h4>';
         if(x.r.A.n<Math.max(12,mA*0.5)) h+='<p class="hint dn" style="margin:0 0 6px">Only '+x.r.A.n+' trades in the learn period even with the loosest settings – this strategy rarely fires on '+tf+'. Try a lower timeframe or a longer period.</p>';
         h+='<p class="hint" style="margin:0 0 6px">'+optDesc(x.s,tf)+'</p><div style="overflow:auto"><table><tr><th></th><th>Trades/mo</th><th>Wins/mo</th><th>Win%</th><th>PF</th><th>Net/mo</th><th>+ in 30 days</th></tr>'+
-          row('Learn (70%)',x.r.A)+row('<b>Check (30%)</b>',x.r.B)+row('All',x.r.F)+'</table></div>'; });
+          row('Learn (70%)',x.r.A)+row('<b>Check (30%)</b>',x.r.B)+row('All',x.r.F)+(x.before?row('<span class="mut">Before (all)</span>',x.before.F):'')+'</table></div>'; });
       h+='<p class="hint" style="margin-top:8px"><b>“+ in 30 days”</b> = how often a 30-day test of these settings ends in profit. Short tests (7 / 30 days) have only a few trades, so they can be negative even when the long run is positive – this column shows how often.</p>';
       if(applied) h+='<div class="row"><button class="btn sm" id="optUndo">↺ Undo – restore previous settings</button></div>';
       else h+='<p class="hint" style="color:var(--warn)">Not applied automatically: the best settings above made money while learning but lost on the unseen last 30%, so they probably won’t keep working. You can still use them.</p><div class="row"><button class="btn sm" id="optForce">Apply these settings anyway</button></div>';
@@ -2203,7 +2232,7 @@ function ppStart(){
   if(amt<=0){ toast('Enter the amount you want to paper trade with',3000); return; }
   if(!ids.length){ toast('Pick at least one strategy',3000); return; }
   var strats=ids.map(function(id){ var x=S.strats.find(function(y){ return y.id===id; }); var c=JSON.parse(JSON.stringify(x)); c.color=stratColor(x); return c; });
-  var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||100;
+  var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var stk=isStock($('ppSym').value); cfg.inst=stk?'eq':(cfg.inst==='eq'?'opt':cfg.inst); cfg.lev=+S.bt.lev||5; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||100;
   cfg.call.qty=cfg.put.qty=q; cfg.call.prem=cfg.put.prem=pr; cfg.exp=$('ppExp').value;
   S.paper={on:true,start:nowIST(),sym:$('ppSym').value,tf:$('ppTf').value,cost:+$('btCost').value||0,amt:amt,cfg:cfg,strats:strats,seen:null};
   save(); PP.bars=null; PP.res=null; ppRender(); ppRun(true);
@@ -2225,7 +2254,7 @@ function ppRun(force){
     all.sort(function(a,b){ return a.t-b.t||a.si-b.si; });
     var cfg=JSON.parse(JSON.stringify(P.cfg)), rs=rupeeTrades(all,cfg), last=Dx.c[Dx.n-1];
     all.forEach(function(t){ if(t.why!=='Open') return; var sc=t.side>0?cfg.call:cfg.put, pts=(last-t.entry)*t.side; t.livePts=pts;
-      if(cfg.inst==='opt') t.liveRs=pts*sc.delta*sc.qty; else t.liveRs=pts*sc.qty; });
+      if(cfg.inst==='opt') t.liveRs=pts*sc.delta*sc.qty; else if(cfg.inst==='eq') t.liveRs=pts*(t.q||0); else t.liveRs=pts*sc.qty; });
     PP.res={tr:all,rs:rs,last:last,lastT:Dx.t[Dx.n-1],D:Dx};
     // alerts for new entries / exits while the app is open
     var sig=all.map(function(t){ return t.t+':'+t.si+':'+t.why; }).join('|');
@@ -2251,10 +2280,14 @@ function ppRender(){
     fillSym($('ppSym'),S.sym); Object.keys(TF).forEach(function(tf){ $('ppTf').appendChild(el('option',{value:tf},tf)); }); $('ppTf').value=S.tf;
     S.strats.forEach(function(st){ var l=el('label',{},'<input type="checkbox" value="'+st.id+'"'+(st.onChart?' checked':'')+'><span style="color:'+stratColor(st)+'">●</span> '+st.name); $('ppStrats').appendChild(l); });
     var c=ppCfg(); $('ppQty').value=S.ppQty||c.call.qty; $('ppPrem').value=S.ppPrem||c.call.prem; $('ppPremL').style.display=$('ppExpR').style.display=c.inst==='opt'?'':'none'; $('ppExp').value=S.ppExp||c.exp; $('ppExp').onchange=function(){ S.ppExp=this.value; save(); };
-    var hint=function(){ var amt=+$('ppAmt').value||0, q=+$('ppQty').value||0, pr=+$('ppPrem').value||0, lc=c.inst==='opt'?q*pr:c.inst==='fut'?c.margin:0, n=lc?Math.floor(amt/lc):0;
+    var hint=function(){ var amt=+$('ppAmt').value||0, q=+$('ppQty').value||0, pr=+$('ppPrem').value||0;
+      c.inst=isStock($('ppSym').value)?'eq':(ppCfg().inst==='eq'?'opt':ppCfg().inst); var eq=c.inst==='eq';
+      $('ppQty').parentNode.style.display=eq?'none':''; $('ppPremL').style.display=$('ppExpR').style.display=c.inst==='opt'?'':'none';
+      if(eq){ $('ppSize').innerHTML='Stock → intraday equity: each trade buys or short-sells as many shares as your capital × '+(+S.bt.lev||5)+' (MIS leverage) pays for, i.e. about ₹'+Math.round(amt*(+S.bt.lev||5)).toLocaleString('en-IN')+' per trade, with Zerodha equity charges.'; $('ppGo').disabled=amt<=0; return; }
+      var lc=c.inst==='opt'?q*pr:c.inst==='fut'?c.margin:0, n=lc?Math.floor(amt/lc):0;
       $('ppSize').innerHTML=(lc?'1 lot ≈ '+R(lc)+' → your amount covers <b class="'+(n?'up':'dn')+'">'+n+' lot'+(n===1?'':'s')+'</b>'+(n?'':' – raise the amount or lower the qty')+'. ':'')+
         ({opt:'Options (buy CE / PE)',fut:'Futures',eq:'Equity'})[c.inst]+' with Zerodha charges, as set in Backtest → Charges &amp; size. Trades start from the next candle close after you press Start.'; $('ppGo').disabled=!!lc&&!n; };
-    $('ppAmt').oninput=$('ppQty').oninput=$('ppPrem').oninput=hint; hint();
+    $('ppAmt').oninput=$('ppQty').oninput=$('ppPrem').oninput=hint; $('ppSym').addEventListener('change',hint); hint();
     $('ppAmt').onchange=function(){ S.ppAmt=+this.value; save(); }; $('ppQty').onchange=function(){ S.ppQty=+this.value; save(); }; $('ppPrem').onchange=function(){ S.ppPrem=+this.value; save(); };
     $('ppGo').onclick=ppStart; return;
   }
