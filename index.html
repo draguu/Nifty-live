@@ -345,12 +345,14 @@ body.desk.pwide{--pw:720px}
       </div>
       <div class="row optRow" style="margin-top:6px"><label class="lbl">Option expiry<select id="btExp"><option value="cur">This week (cheaper, fast decay)</option><option value="next">Next week (₹200–300, slow decay)</option></select></label><label class="lbl" style="flex-direction:row;align-items:center;gap:6px;align-self:flex-end"><input id="btTheta" type="checkbox" style="width:auto" checked> Include time decay</label></div>
       <p class="hint" id="btEqHint" style="display:none;margin:6px 0 0"></p>
+      <div class="row" id="btAutoRow" style="margin-top:6px;align-items:center"><label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btAuto" type="checkbox" style="width:auto" checked> Auto qty – as many lots as the capital can buy</label></div>
+      <p class="hint" id="btAutoHint" style="margin:2px 0 0"></p>
       <div id="btSides">
         <div class="side"><b class="up">CALL</b><label class="lbl">Qty<input id="btQty" type="number" step="1" value="75"></label><label class="lbl optOnly">Premium ₹<input id="btPrem" type="number" step="any" value="100"></label><label class="lbl optOnly">Delta<input id="btDelta" type="number" step="0.05" value="0.5"></label></div>
         <div class="side"><b class="dn">PUT</b><label class="lbl">Qty<input id="btQtyP" type="number" step="1" value="75"></label><label class="lbl optOnly">Premium ₹<input id="btPremP" type="number" step="any" value="100"></label><label class="lbl optOnly">Delta<input id="btDeltaP" type="number" step="0.05" value="0.5"></label></div>
       </div>
       <div class="row" id="btCompRow" style="margin-top:6px;align-items:flex-end">
-        <label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btComp" type="checkbox" style="width:auto"> Add 1 lot when profit can buy 2 more lots</label>
+        <label class="lbl" style="flex-direction:row;align-items:center;gap:6px"><input id="btComp" type="checkbox" style="width:auto"> <span id="btCompTxt">Add 1 lot when profit can buy 2 more lots</span></label>
         <label class="lbl" id="btCapL">Starting capital ₹<input id="btCap" type="number" step="any" value="15000"></label>
         <label class="lbl" id="btLevL">Intraday leverage (MIS) ×<input id="btLev" type="number" step="any" value="5"></label>
         <label class="lbl" id="btMarginL">Margin per futures lot ₹<input id="btMargin" type="number" step="any" value="150000"></label>
@@ -1996,11 +1998,22 @@ function fillBtStrat(){ var v=$('btStrat').value; $('btStrat').innerHTML=''; S.s
 fillSym($('btSym'),S.sym);
 Object.keys(TF).forEach(function(tf){ $('btTf').appendChild(el('option',{value:tf},tf)); });
 $('btTf').value=S.bt.tf||'15m'; $('btDays').value=String(S.bt.days||365); $('btCost').value=S.bt.cost!=null?S.bt.cost:2;
-$('btInst').value=S.bt.inst||'opt'; $('btQty').value=S.bt.qty||75; $('btPrem').value=S.bt.prem||100; $('btDelta').value=S.bt.delta||0.5;
+// Pratik buys ₹120–150 strikes: premium defaults to ₹150 (the top of that range), so auto qty never buys more than the capital allows
+if(!S.prem150){ S.prem150=true; S.bt=S.bt||{}; S.bt.prem=150; S.bt.premP=150; S.ppPrem=150; save(); }
+$('btInst').value=S.bt.inst||'opt'; $('btQty').value=S.bt.qty||75; $('btPrem').value=S.bt.prem||150; $('btDelta').value=S.bt.delta||0.5;
 $('btExp').value=S.bt.exp||'cur'; $('btTheta').checked=S.bt.theta!==false;
-$('btQtyP').value=S.bt.qtyP||S.bt.qty||75; $('btPremP').value=S.bt.premP||S.bt.prem||100; $('btDeltaP').value=S.bt.deltaP||S.bt.delta||0.5;
+$('btQtyP').value=S.bt.qtyP||S.bt.qty||75; $('btPremP').value=S.bt.premP||S.bt.prem||150; $('btDeltaP').value=S.bt.deltaP||S.bt.delta||0.5;
 $('btComp').checked=!!S.bt.comp; $('btCap').value=S.bt.cap||15000; $('btMargin').value=S.bt.margin||150000;
 function btInstUI(){ var k=$('btInst').value, cm=$('btComp').checked; $('btMoneySum').textContent=k==='pts'?'Points only':({opt:'Options',fut:'Futures',eq:'Equity'})[k]+' · qty '+$('btQty').value+(k==='opt'?' · ₹'+$('btPrem').value+' · '+($('btExp').value==='next'?'next week':'this week'):'')+(cm?' · compounding':''); $('btSides').style.display=k==='pts'?'none':''; Array.prototype.forEach.call(document.querySelectorAll('#btSides .optOnly'),function(x){ x.style.visibility=k==='opt'?'':'hidden'; }); Array.prototype.forEach.call(document.querySelectorAll('.optRow'),function(x){ x.style.display=k==='opt'?'':'none'; }); var sb=document.querySelectorAll('#btSides .side>b'); sb[0].textContent=k==='opt'?'CALL':'CALL / long'; sb[1].textContent=k==='opt'?'PUT':'PUT / short'; $('btCompRow').style.display=k==='pts'?'none':''; $('btCapL').style.display=cm?'':'none'; $('btMarginL').style.display=(cm&&k==='fut')?'':'none'; }
+function btAutoUI(){ var k=$('btInst').value, lot=lotOf($('btSym').value), can=(k==='opt'||k==='fut')&&lot>0, on=can&&$('btAuto').checked, cap=+$('btCap').value||0;
+  $('btAutoRow').style.display=can?'':'none'; $('btAutoHint').style.display=can?'':'none';
+  ['btQty','btQtyP'].forEach(function(id){ $(id).readOnly=on; $(id).style.opacity=on?.6:1; });
+  if(on){ $('btCapL').style.display=''; if(k==='fut') $('btMarginL').style.display=''; var m=+$('btMargin').value||150000, h=[];
+    [['btQty','btPrem','CALL'],['btQtyP','btPremP','PUT']].forEach(function(x){ var pr=+$(x[1]).value||100, L=autoLots(cap,pr,lot,k,m); $(x[0]).value=L*lot;
+      h.push(x[2]+': ₹'+Math.round(cap).toLocaleString('en-IN')+' ÷ '+(k==='fut'?'₹'+m.toLocaleString('en-IN')+' margin':'(₹'+pr+' × '+lot+')')+' = <b class="'+(L?'up':'dn')+'">'+L+' lot'+(L===1?'':'s')+' = '+L*lot+' qty</b>'); });
+    $('btAutoHint').innerHTML=h.join('<br>')+'<br><span class="mut">Premium = the most you pay per option (you buy ₹120–150 strikes → keep ₹150 so the lots are always affordable). '+symName($('btSym').value)+' lot = '+lot+'. '+($('btComp').checked?'With “grow with profit” on, each trade re-uses all the current capital, so lots go up after wins and down after losses.':'Same lots on every trade (from the starting capital).')+' Max lots isn’t the same as safe lots – see the 🎓 and drawdown numbers.</span>';
+    $('btCompTxt').textContent='Grow with profit – recalculate lots from current capital every trade'; }
+  else { $('btAutoHint').innerHTML=can?'<span class="mut">Type the qty yourself (multiples of '+lot+').</span>':''; $('btCompTxt').textContent='Add 1 lot when profit can buy 2 more lots'; } }
 function isStock(sym){ return !!sym && sym.indexOf('idx:')!==0; }
 function btEqUI(){ var eq=$('btInst').value==='eq', cm=$('btComp').checked;
   Array.prototype.forEach.call(document.querySelectorAll('#btSides'),function(x){ if(eq) x.style.display='none'; });
@@ -2012,16 +2025,24 @@ function btAutoInst(){ var st=isStock($('btSym').value), k=$('btInst').value;
   if(st && k!=='eq' && k!=='pts'){ $('btInst').value='eq'; toast('Stock selected – switched to intraday equity sizing',2500); }
   else if(!st && k==='eq'){ $('btInst').value='opt'; toast('Index selected – switched to options',2500); }
   btInstUI(); btEqUI(); }
-var _btInstUI=btInstUI; btInstUI=function(){ _btInstUI(); btEqUI(); };
+var _btInstUI=btInstUI; btInstUI=function(){ _btInstUI(); btEqUI(); try{ btAutoUI(); }catch(e){} };
 $('btLev').value=S.bt.lev||5;
 btAutoInst();
 $('btSym').addEventListener('change',function(){ if(profLoad(this.value)){ try{ fillBtStrat(); btQuick(); renderSignals(); }catch(e){} toast('Loaded strategy settings for '+symName(this.value),2000); } btAutoInst(); $('btInst').onchange&&$('btInst').onchange(); });
 $('btLev').addEventListener('change',function(){ S.bt.lev=+this.value||5; save(); btEqUI(); });
 $('btCap').addEventListener('input',btEqUI);
+$('btAuto').checked=S.bt.auto!==false;
+['btCap','btPrem','btPremP','btMargin','btSym','btInst','btComp'].forEach(function(id){ $(id).addEventListener('input',btAutoUI); $(id).addEventListener('change',btAutoUI); });
+$('btAuto').addEventListener('change',function(){ S.bt.auto=this.checked; save(); btAutoUI(); });
+btAutoUI();
 $('btExp').addEventListener('change',function(){ var v=$('btExp').value==='next'?250:100; $('btPrem').value=v; $('btPremP').value=v; });
-['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta','btQtyP','btPremP','btDeltaP','btComp','btCap','btMargin','btExp','btTheta'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value,qtyP:+$('btQtyP').value,premP:+$('btPremP').value,deltaP:+$('btDeltaP').value,comp:$('btComp').checked,cap:+$('btCap').value,margin:+$('btMargin').value,lev:+$('btLev').value||5}; save(); btInstUI(); }; });
-function btCfg(){ var sd=function(q,p,d){ return {qty:Math.max(1,+$(q).value||1),prem:+$(p).value||100,delta:+$(d).value||0.5}; };
-  return {inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,call:sd('btQty','btPrem','btDelta'),put:sd('btQtyP','btPremP','btDeltaP'),comp:$('btInst').value!=='pts'&&$('btComp').checked,cap:Math.max(0,+$('btCap').value||0),margin:Math.max(1,+$('btMargin').value||1),lev:Math.max(1,+$('btLev').value||5)}; }
+['btTf','btDays','btCost','btInst','btQty','btPrem','btDelta','btQtyP','btPremP','btDeltaP','btComp','btCap','btMargin','btExp','btTheta'].forEach(function(id){ $(id).onchange=function(){ S.bt={tf:$('btTf').value,days:+$('btDays').value,cost:+$('btCost').value,inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,qty:+$('btQty').value,prem:+$('btPrem').value,delta:+$('btDelta').value,qtyP:+$('btQtyP').value,premP:+$('btPremP').value,deltaP:+$('btDeltaP').value,comp:$('btComp').checked,cap:+$('btCap').value,margin:+$('btMargin').value,lev:+$('btLev').value||5,auto:$('btAuto').checked}; save(); btInstUI(); }; });
+// exchange lot sizes (Jan 2026 revision). Stocks trade as intraday equity, sized from capital already.
+function lotOf(sym){ return ({'idx:in;NSX':65,'idx:in;nbx':30,'idx:in;SEN':20})[sym]||0; }
+function autoLots(cap,prem,lot,inst,margin){ var per=inst==='fut'?margin:prem*lot; return per>0?Math.floor(Math.max(0,cap)/per):0; }
+function btCfg(){ var sd=function(q,p,d){ return {qty:Math.max(1,+$(q).value||1),prem:+$(p).value||150,delta:+$(d).value||0.5}; };
+  return {inst:$('btInst').value,exp:$('btExp').value,theta:$('btTheta').checked,call:sd('btQty','btPrem','btDelta'),put:sd('btQtyP','btPremP','btDeltaP'),comp:$('btInst').value!=='pts'&&$('btComp').checked,cap:Math.max(0,+$('btCap').value||0),margin:Math.max(1,+$('btMargin').value||1),lev:Math.max(1,+$('btLev').value||5),autoQty:btAutoOn(),lot:lotOf($('btSym').value)}; }
+function btAutoOn(){ var k=$('btInst').value; return $('btAuto').checked && (k==='opt'||k==='fut') && lotOf($('btSym').value)>0; }
 function zCharges(kind,buy,sell){ var b,stt,tx,st;
   if(kind==='opt'){ b=40; stt=0.0015*sell; tx=0.0003553*(buy+sell); st=0.00003*buy; }
   else if(kind==='fut'){ b=Math.min(20,0.0003*buy)+Math.min(20,0.0003*sell); stt=0.0005*sell; tx=0.0000183*(buy+sell); st=0.00002*buy; }
@@ -2040,12 +2061,15 @@ function rupeeTrades(tr,cfg){
   tr.forEach(function(t){ t.lots=1; t.skip=false; if(cfg.inst==='eq') t.q=eqShares(cfg,cfg.comp?cap:cfg.cap,t.entry);
     if(t.why==='Open'){ t.rs=0; t.chg=0; return; }
     if(cfg.inst==='eq'){ if(t.q<1){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; } }
+    else if(cfg.autoQty && cfg.lot){ var sc0=sideCfg(cfg,t), per=cfg.inst==='fut'?cfg.margin:sc0.prem*cfg.lot, base=cfg.comp?cap:cfg.cap, L=per>0?Math.floor(base/per):0;
+      if(L<1){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; }
+      if(L>lots) ups++; else if(L<lots) downs++; lots=L; if(lots>maxLots) maxLots=lots; t.lots=lots; t.lotQ=cfg.lot; }
     else if(cfg.comp){ var lc=lotCost(cfg,t);
       if(bust || cap<lc){ if(!bust) bust=t.t; t.skip=true; t.lots=0; t.rs=0; t.chg=0; return; }
       if(cap<lots*lc){ lots=Math.max(1,Math.floor(cap/lc)); downs++; }
       else if(cap>=(lots+2)*lc){ lots++; ups++; }
       if(lots>maxLots) maxLots=lots; t.lots=lots; }
-    var mu=t.mult||1, pu=t.pts/mu, sc=sideCfg(cfg,t), q=(cfg.inst==='eq'?t.q:sc.qty*t.lots)*mu, buy, sell, gross;
+    var mu=t.mult||1, pu=t.pts/mu, sc=sideCfg(cfg,t), q=(cfg.inst==='eq'?t.q:(t.lotQ||sc.qty)*t.lots)*mu, buy, sell, gross;
     if(cfg.inst==='opt'){ var P=sc.prem, dk=optDecay(cfg,t,P), out=Math.max(0.05,P+pu*sc.delta-dk); t.decay=dk; buy=P*q; sell=out*q; gross=sell-buy; }
     else { if(t.side>0){ buy=t.entry*q; sell=t.exit*q; } else { sell=t.entry*q; buy=t.exit*q; } gross=pu*q; }
     var c=zCharges(cfg.inst,buy,sell); t.chg=c.total; t.rs=gross-c.total; cap+=t.rs; t.cap=cap; for(var k in agg) agg[k]+=c[k]; });
@@ -2067,9 +2091,9 @@ function rsCard(rs,cfg){
   if(rs.eq){ h=h.replace(' ·  · ',' · ');
     h+='<div class="stats" style="margin-top:6px">'+c('Capital',R(rs.eq.start)+' → '+R(rs.eq.end),ud(rs.eq.end-rs.eq.start))+c('Return',fmt(rs.eq.start?100*(rs.eq.end-rs.eq.start)/rs.eq.start:0,1)+'%',ud(rs.eq.end-rs.eq.start))+c('Shares / trade',rs.eq.minQ===rs.eq.maxQ?rs.eq.minQ:rs.eq.minQ+' – '+rs.eq.maxQ)+'</div>'+
       '<p class="hint" style="margin:6px 0 0">Each trade buys (or short-sells) as many shares as '+(cfg.comp?'the current capital':'the starting capital')+' × '+(cfg.lev||5)+' (MIS leverage) can pay for.'+(rs.eq.bust?' <b class="dn">Capital couldn’t buy 1 share from '+dmy(rs.eq.bust)+' – '+rs.eq.skipped+' trades skipped.</b>':'')+'</p>'; }
-  if(rs.comp){ var lcTxt=cfg.inst==='opt'?R(cfg.call.prem*cfg.call.qty)+' CALL / '+R(cfg.put.prem*cfg.put.qty)+' PUT':cfg.inst==='fut'?R(cfg.margin)+' margin':'entry × qty';
+  if(rs.comp){ var lcTxt=cfg.autoQty&&cfg.lot?(cfg.inst==='opt'?R(cfg.call.prem*cfg.lot)+' ('+cfg.lot+' qty × ₹'+cfg.call.prem+')':R(cfg.margin)+' margin'):cfg.inst==='opt'?R(cfg.call.prem*cfg.call.qty)+' CALL / '+R(cfg.put.prem*cfg.put.qty)+' PUT':cfg.inst==='fut'?R(cfg.margin)+' margin':'entry × qty';
     h+='<div class="stats" style="margin-top:6px">'+c('Capital',R(rs.comp.start)+' → '+R(rs.comp.end),ud(rs.comp.end-rs.comp.start))+c('Return',fmt(rs.comp.start?100*(rs.comp.end-rs.comp.start)/rs.comp.start:0,1)+'%',ud(rs.comp.end-rs.comp.start))+c('Lots now / max',rs.comp.lots+' / '+rs.comp.maxLots)+'</div>'+
-      '<p class="hint" style="margin:6px 0 0">1 lot = '+lcTxt+'. A lot is added when capital covers 2 more lots; lots are cut when it can\'t cover the ones in use ('+rs.comp.ups+' added / '+rs.comp.downs+' cut).'+(rs.comp.bust?' <b class="dn">Capital fell below 1 lot on '+dmy(rs.comp.bust)+' – '+rs.comp.skipped+' later trades skipped.</b>':'')+'</p>'; }
+      '<p class="hint" style="margin:6px 0 0">1 lot = '+lcTxt+(cfg.autoQty&&cfg.lot?'. Every trade uses as many lots as the current capital can buy (lots went up '+rs.comp.ups+' times, down '+rs.comp.downs+' times).':'. A lot is added when capital covers 2 more lots; lots are cut when it can\'t cover the ones in use ('+rs.comp.ups+' added / '+rs.comp.downs+' cut).')+(rs.comp.bust?' <b class="dn">Capital fell below 1 lot on '+dmy(rs.comp.bust)+' – '+rs.comp.skipped+' later trades skipped.</b>':'')+'</p>'; }
   h+='<p class="hint" style="margin:6px 0 0">Brokerage '+R(rs.chg.brok)+' · STT '+R(rs.chg.stt)+' · exch '+R(rs.chg.tx)+' · stamp '+R(rs.chg.stamp)+' · GST '+R(rs.chg.gst)+' · SEBI '+R(rs.chg.sebi)+(cfg.inst==='opt'?' · option P&L = points × delta'+(cfg.theta?' − time decay ('+(cfg.exp==='next'?'next':'this')+'-week expiry)':' (no decay – optimistic)'):'')+'</p></div>';
   return h;
 }
@@ -2430,8 +2454,9 @@ function ppStart(){
   if(amt<=0){ toast('Enter the amount you want to paper trade with',3000); return; }
   if(!ids.length){ toast('Pick at least one strategy',3000); return; }
   var strats=ids.map(function(id){ var x=S.strats.find(function(y){ return y.id===id; }); var c=profFor(x,$('ppSym').value); c.color=stratColor(x); return c; });
-  var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var stk=isStock($('ppSym').value); cfg.inst=stk?'eq':(cfg.inst==='eq'?'opt':cfg.inst); cfg.lev=+S.bt.lev||5; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||100;
+  var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var stk=isStock($('ppSym').value); cfg.inst=stk?'eq':(cfg.inst==='eq'?'opt':cfg.inst); cfg.lev=+S.bt.lev||5; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||150;
   cfg.call.qty=cfg.put.qty=q; cfg.call.prem=cfg.put.prem=pr; cfg.exp=$('ppExp').value;
+  cfg.lot=lotOf($('ppSym').value); cfg.autoQty=!!cfg.lot && (cfg.inst==='opt'||cfg.inst==='fut');
   S.paper={on:true,start:nowIST(),sym:$('ppSym').value,tf:$('ppTf').value,cost:+$('btCost').value||0,amt:amt,cfg:cfg,strats:strats,seen:null};
   save(); PP.bars=null; PP.res=null; ppRender(); ppRun(true);
 }
@@ -2473,7 +2498,7 @@ function ppRender(){
       '<div class="lbl" style="margin-top:8px">Strategies</div><div class="ppS" id="ppStrats"></div>'+
       '<div class="row" style="margin-top:8px"><label class="lbl">Qty per trade<input id="ppQty" type="number" step="1"></label><label class="lbl" id="ppPremL">Option premium ₹ (approx)<input id="ppPrem" type="number" step="any"></label></div>'+
       '<div class="row" id="ppExpR" style="margin-top:6px"><label class="lbl">Option expiry<select id="ppExp"><option value="cur">This week (fast decay on expiry day)</option><option value="next">Next week (slower decay)</option></select></label></div>'+
-      '<label class="chk" style="margin-top:8px"><input type="checkbox" id="ppComp" checked> Add 1 lot when profit can buy 2 more lots</label>'+
+      '<label class="chk" style="margin-top:8px"><input type="checkbox" id="ppComp" checked> Grow with profit (recalculate lots every trade)</label>'+
       '<p class="hint" id="ppSize"></p><button class="btn pri" style="width:100%" id="ppGo">▶ Start paper trading</button></div>';
     fillSym($('ppSym'),S.sym); Object.keys(TF).forEach(function(tf){ $('ppTf').appendChild(el('option',{value:tf},tf)); }); $('ppTf').value=S.tf;
     S.strats.forEach(function(st){ var l=el('label',{},'<input type="checkbox" value="'+st.id+'"'+(st.onChart?' checked':'')+'><span style="color:'+stratColor(st)+'">●</span> '+st.name); $('ppStrats').appendChild(l); });
@@ -2482,10 +2507,15 @@ function ppRender(){
       c.inst=isStock($('ppSym').value)?'eq':(ppCfg().inst==='eq'?'opt':ppCfg().inst); var eq=c.inst==='eq';
       $('ppQty').parentNode.style.display=eq?'none':''; $('ppPremL').style.display=$('ppExpR').style.display=c.inst==='opt'?'':'none';
       if(eq){ $('ppSize').innerHTML='Stock → intraday equity: each trade buys or short-sells as many shares as your capital × '+(+S.bt.lev||5)+' (MIS leverage) pays for, i.e. about ₹'+Math.round(amt*(+S.bt.lev||5)).toLocaleString('en-IN')+' per trade, with Zerodha equity charges.'; $('ppGo').disabled=amt<=0; return; }
+      var lot=lotOf($('ppSym').value);
+      if(lot && (c.inst==='opt'||c.inst==='fut')){ var L=autoLots(amt,pr,lot,c.inst,c.margin); $('ppQty').value=L*lot; $('ppQty').readOnly=true; $('ppQty').style.opacity=.6;
+        $('ppSize').innerHTML='Auto qty: ₹'+Math.round(amt).toLocaleString('en-IN')+' ÷ '+(c.inst==='fut'?'₹'+c.margin.toLocaleString('en-IN')+' margin':'(₹'+pr+' × '+lot+')')+' = <b class="'+(L?'up':'dn')+'">'+L+' lot'+(L===1?'':'s')+' = '+L*lot+' qty</b> ('+symName($('ppSym').value)+' lot = '+lot+'). '+($('ppComp').checked?'Lots are recalculated from the current paper capital before every trade.':'Same lots on every trade.')+(L?'':' – raise the amount or lower the premium.');
+        $('ppGo').disabled=!L; return; }
+      $('ppQty').readOnly=false; $('ppQty').style.opacity=1;
       var lc=c.inst==='opt'?q*pr:c.inst==='fut'?c.margin:0, n=lc?Math.floor(amt/lc):0;
       $('ppSize').innerHTML=(lc?'1 lot ≈ '+R(lc)+' → your amount covers <b class="'+(n?'up':'dn')+'">'+n+' lot'+(n===1?'':'s')+'</b>'+(n?'':' – raise the amount or lower the qty')+'. ':'')+
         ({opt:'Options (buy CE / PE)',fut:'Futures',eq:'Equity'})[c.inst]+' with Zerodha charges, as set in Backtest → Charges &amp; size. Trades start from the next candle close after you press Start.'; $('ppGo').disabled=!!lc&&!n; };
-    $('ppAmt').oninput=$('ppQty').oninput=$('ppPrem').oninput=hint; $('ppSym').addEventListener('change',hint); hint();
+    $('ppAmt').oninput=$('ppQty').oninput=$('ppPrem').oninput=hint; $('ppSym').addEventListener('change',hint); $('ppComp').addEventListener('change',hint); hint();
     $('ppAmt').onchange=function(){ S.ppAmt=+this.value; save(); }; $('ppQty').onchange=function(){ S.ppQty=+this.value; save(); }; $('ppPrem').onchange=function(){ S.ppPrem=+this.value; save(); };
     $('ppGo').onclick=ppStart; return;
   }
