@@ -201,6 +201,25 @@ details>summary{cursor:pointer}
 .sdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
 .colrow input[type=range]{accent-color:var(--acc)}
 .x{font-size:20px;min-width:30px;min-height:30px}
+
+/* ===== desktop layout (Settings → Layout) ===== */
+body.desk #app{display:grid;grid-template-columns:72px minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding-top:0}
+body.desk.panel #app{grid-template-columns:72px minmax(0,1fr) var(--pw,480px)}
+body.desk nav.tabs{grid-column:1;grid-row:1;order:-1;flex-direction:column;justify-content:flex-start;gap:4px;padding:10px 0;border-top:0;border-right:1px solid var(--bd);background:var(--bg2)}
+body.desk nav.tabs button{flex:0 0 auto;padding:10px 0;font-size:11px}
+body.desk nav.tabs button b svg{padding:4px 10px!important}
+body.desk #v-chart{grid-column:2;grid-row:1;display:flex!important}
+body.desk .view:not(#v-chart).on{grid-column:3;grid-row:1;border-left:1px solid var(--bd);background:var(--bg)}
+body.desk:not(.panel) .view:not(#v-chart){display:none!important}
+body.desk .scroll{padding:16px 18px}
+body.desk .card{margin-bottom:12px}
+body.desk #zH,body.desk #zV{display:none}
+body.desk .topbar{padding:8px 14px;gap:10px}
+body.desk .topbar #px{font-size:20px}
+body.desk #panelW{display:flex}
+#panelW{display:none;flex-direction:column;gap:4px;margin-top:auto;padding-bottom:6px;align-items:center}
+#panelW button{background:none;border:1px solid var(--bd);border-radius:8px;color:var(--mut);font-size:11px;padding:3px 6px;width:52px}
+body.desk.pwide{--pw:720px}
 </style>
 </head>
 <body>
@@ -365,6 +384,7 @@ details>summary{cursor:pointer}
         <label class="chk"><input type="checkbox" id="setVib"> Vibrate</label>
         <label class="chk"><input type="checkbox" id="setVol"> Volume bars</label>
         <label class="chk"><input type="checkbox" id="setDay"> Day separator lines</label>
+        <label class="lbl" style="flex:0 0 auto">Layout<select id="setLayout"><option value="auto">Auto (desktop on big screens)</option><option value="mobile">Mobile view</option><option value="desktop">Desktop view</option></select></label>
       </div>
       <p class="hint">Outside market hours (Mon–Fri 9:00–15:35 IST) the chart refreshes every 30 s to save data.</p>
     </div>
@@ -390,6 +410,7 @@ details>summary{cursor:pointer}
   <button data-v="bt"><b><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/></svg></b>Backtest</button>
   <button data-v="paper"><b><svg viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="13" rx="2"/><path d="M3.5 10h17M8 6V4.5h8V6M15 14.5h2"/></svg></b>Paper</button>
   <button data-v="set"><b><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></b>Settings</button>
+  <div id="panelW"><button id="pwBtn" title="Panel width">⇔ width</button><button id="lyBtn" title="Switch to mobile view">📱 mobile</button></div>
 </nav>
 </div>
 
@@ -788,21 +809,27 @@ function patternArrs(D,s){
 // returns [{i, side, stop}] signal on CLOSE of bar i; entry at open of i+1
 function sideS(s,side){ var o=s.sides&&s.sides[side>0?'long':'short']; if(!o) return s; var c={}; for(var k in s) c[k]=s[k]; for(k in o) c[k]=o[k]; return c; }
 function strategySignals(D,s,tfMin){
-  var n=D.n, sL=sideS(s,1), sS=sideS(s,-1), pat=patternArrs(D,sL), patS=s.sides?patternArrs(D,sS):pat, LC=andAll(D,s.long), SC=andAll(D,s.short), out=[];
+  // Entry conditions don't depend on stop / target / time window / exit settings, so the candles where they're true are
+  // found once and cached; each later run only walks those few candles (makes tuning many times faster).
+  var sL=sideS(s,1), sS=sideS(s,-1), edge=(s.pattern==='none' && s.trigger!=='every');
+  var key='__sig_'+JSON.stringify([s.pattern,sL.pat||{},s.sides?(sS.pat||{}):0,s.long||[],s.short||[],edge]), C=D.cache[key];
+  if(!C){
+    var n=D.n, pat=patternArrs(D,sL), patS=s.sides?patternArrs(D,sS):pat, LC=andAll(D,s.long), SC=andAll(D,s.short), L=[], Sx=[], prevL=false, prevS=false;
+    var hasL=!!(s.long&&s.long.length || s.pattern!=='none'), hasS=!!(s.short&&s.short.length || s.pattern!=='none');
+    for(var i=0;i<n;i++){ var rL=!!(pat.L[i] && LC[i] && hasL), rS=!!(patS.S[i] && SC[i] && hasS), oL=rL, oS=rS;
+      if(edge){ oL=rL&&!prevL; oS=rS&&!prevS; } prevL=rL; prevS=rS; if(oL) L.push(i); if(oS) Sx.push(i); }
+    D.sigKeys=(D.sigKeys||[]); D.sigKeys.push(key); if(D.sigKeys.length>300){ delete D.cache[D.sigKeys.shift()]; }
+    C=D.cache[key]={L:L,S:Sx};
+  }
   var intraday=tfMin<1440, stL=hm2min(sL.start||'09:15'), enL=hm2min(sL.end||'15:00'), stS=hm2min(sS.start||'09:15'), enS=hm2min(sS.end||'15:00');
-  var atr=indCalc(D,'ATR',{len:14}).value, edge=(s.pattern==='none' && s.trigger!=='every');
-  var prevL=false, prevS=false;
-  for(var i=0;i<n;i++){
-    var okL = pat.L[i] && LC[i] && (s.long&&s.long.length || s.pattern!=='none');
-    var okS = patS.S[i] && SC[i] && (s.short&&s.short.length || s.pattern!=='none');
-    var rawL=okL, rawS=okS;
-    if(edge){ okL = okL && !prevL; okS = okS && !prevS; }
-    prevL=rawL; prevS=rawS;
+  var atr=indCalc(D,'ATR',{len:14}).value, out=[], a=0, b=0, LA=s.dir==='both'||s.dir==='long'||!s.dir, SA=s.dir==='both'||s.dir==='short'||!s.dir;
+  if(s.dir==='none') return out;
+  while(a<C.L.length || b<C.S.length){
+    var iL=a<C.L.length?C.L[a]:Infinity, iS=b<C.S.length?C.S[b]:Infinity, i=Math.min(iL,iS), okL=iL===i&&LA, okS=iS===i&&SA;
+    if(iL===i) a++; if(iS===i) b++;
     if(intraday){ var m=D.mod[i]+tfMin; if(m<stL || m>enL) okL=false; if(m<stS || m>enS) okS=false; }
-    if(s.dir==='long') okS=false; if(s.dir==='short') okL=false; if(s.dir==='none') okL=okS=false;
-    if(!okL && !okS) continue;
-    var side= okL?1:-1; if(okL&&okS) continue; // ambiguous
-    out.push({i:i,side:side,stop:stopFor(D,side>0?sL:sS,i,side,atr)});
+    if(!okL && !okS) continue; if(okL&&okS) continue; // ambiguous
+    var side=okL?1:-1; out.push({i:i,side:side,stop:stopFor(D,side>0?sL:sS,i,side,atr)});
   }
   return out;
 }
@@ -2404,15 +2431,27 @@ function ppRender(){
 setInterval(function(){ if(S.paper&&S.paper.on&&!document.hidden) ppRun(); },30000);
 document.addEventListener('visibilitychange',function(){ if(!document.hidden&&S.paper&&S.paper.on) ppRun(); });
 if(S.paper) ppRun(true);
+function isDesk(){ var L=S.layout||'auto'; return L==='desktop' || (L==='auto' && window.innerWidth>=1000); }
+var curView='chart';
+function applyLayout(){ var d=isDesk(); document.body.classList.toggle('desk',d); document.body.classList.toggle('pwide',!!S.pwide);
+  document.body.classList.toggle('panel',d && curView!=='chart'); if(d && curView==='chart' && !S.deskInit){ S.deskInit=true; } }
 function showView(v){
+  if(isDesk() && v==='chart' && curView==='chart'){ } curView=v;
   ['chart','strats','bt','paper','set'].forEach(function(x){ $('v-'+x).className='view'+(x===v?' on':''); });
+  applyLayout();
   Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.className=b.dataset.v===v?'on':''; });
   if(v==='strats') renderStratList();
   if(v==='bt'){ profLoad($('btSym').value); fillBtStrat(); btQuick(); }
   if(v==='chart'||v==='strats'){ if(profLoad(S.sym)){ try{ renderSignals(); }catch(e){} } if(v==='strats'){ renderStratList(); profLabel(); } }
   if(v==='paper') ppRender();
 }
-Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.onclick=function(){ showView(b.dataset.v); }; });
+Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.onclick=function(){
+  // desktop: the chart always stays; tapping the open panel's tab again closes it
+  if(isDesk() && b.dataset.v===curView && curView!=='chart') return showView('chart'); showView(b.dataset.v); }; });
+$('setLayout').value=S.layout||'auto'; $('setLayout').onchange=function(){ S.layout=this.value; save(); applyLayout(); if(isDesk()&&curView==='set') showView('set'); toast(isDesk()?'Desktop view: chart on the left, panels open on the right':'Mobile view',2500); };
+$('lyBtn').onclick=function(){ S.layout='mobile'; save(); $('setLayout').value='mobile'; applyLayout(); };
+$('pwBtn').onclick=function(){ S.pwide=!S.pwide; save(); applyLayout(); };
+window.addEventListener('resize',applyLayout); applyLayout();
 
 // ---------------- start ----------------
 if(!LC){ setStatus('chart library failed to load — check internet'); return; }
