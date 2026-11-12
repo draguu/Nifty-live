@@ -222,6 +222,7 @@ body.desk #panelW{display:flex}
 body.desk.pwide{--pw:720px}
 #veBar{position:absolute;left:8px;right:72px;top:6px;z-index:9;background:rgba(22,26,33,.94);border:1px solid var(--acc);border-radius:10px;padding:6px 8px;font-size:12px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
 #veInfo{color:var(--mut);margin-top:3px;line-height:1.4}
+body.ve #chart,body.ve #chart *{touch-action:none!important}
 </style>
 </head>
 <body>
@@ -1420,19 +1421,31 @@ function veNewSetting(t,which,price){ var side=t.side, ss=JSON.parse(JSON.string
   else sl={type:'pts',v:r2(dist,1),buf:0};
   ss.sl=sl; return {ss:ss,label:'SL '+(sl.type==='atr'?sl.v+'×ATR':sl.type==='pct'?sl.v+'%':sl.type==='pts'?sl.v+' pts':sl.type+' +'+sl.buf)+' (−'+fmt(dist,1)+' pts)'}; }
 (function(){ var el_=$('chart');
-  function pos(e){ var r=el_.getBoundingClientRect(), p=e.touches?e.touches[0]:e; return {x:p.clientX-r.left,y:p.clientY-r.top}; }
-  function hit(x,y){ var best=null, bd=16; VE.tr.forEach(function(t){ var g=veGeom(t); if(!g||x<g.x0-10||x>g.x1+10) return;
-      [['tp',g.yt],['sl',g.ys]].forEach(function(h){ if(h[1]==null) return; var dd=Math.abs(y-h[1]); if(dd<bd){ bd=dd; best={t:t,which:h[0]}; } }); }); return best; }
-  el_.addEventListener('pointerdown',function(e){ if(!VE.on) return; var q=pos(e), h=hit(q.x,q.y); if(!h) return;
-    e.preventDefault(); e.stopPropagation(); VE.drag={t:h.t,which:h.which,y:q.y,label:''}; try{ el_.setPointerCapture(e.pointerId); }catch(x){} chart.applyOptions({handleScroll:false,handleScale:false}); if(ovReq) ovReq(); },true);
-  ['mousedown','touchstart'].forEach(function(ev){ el_.addEventListener(ev,function(e){ if(VE.drag){ e.stopPropagation(); if(e.cancelable) e.preventDefault(); } },{capture:true,passive:false}); });
-  el_.addEventListener('pointermove',function(e){ if(!VE.drag) return; e.stopPropagation(); var q=pos(e); VE.drag.y=q.y; var pr=cSeries.coordinateToPrice(q.y), n=pr!=null?veNewSetting(VE.drag.t,VE.drag.which,pr):null;
-    VE.drag.label=n?n.label:'too close to entry'; if(ovReq) ovReq(); },true);
-  function up(e){ if(!VE.drag) return; e.stopPropagation(); var dg=VE.drag; VE.drag=null; chart.applyOptions({handleScroll:true,handleScale:true});
-    var pr=cSeries.coordinateToPrice(dg.y), n=pr!=null?veNewSetting(dg.t,dg.which,pr):null;
-    if(n){ VE.hist.push(JSON.parse(JSON.stringify(VE.s.sides))); VE.s.sides[veKey(dg.t.side)]=n.ss; toast((dg.t.side>0?'CALL ':'PUT ')+n.label.split(' (')[0]+' – applied to every '+(dg.t.side>0?'CALL':'PUT')+' trade',2500); }
+  function rel(cx,cy){ var r=el_.getBoundingClientRect(); return {x:cx-r.left,y:cy-r.top}; }
+  // grab: near a line (±26px) or anywhere inside its coloured zone
+  function hit(x,y){ var best=null, bd=1e9; VE.tr.forEach(function(t){ var g=veGeom(t); if(!g||g.ye==null||x<g.x0-14||x>g.x1+14) return;
+      [['tp',g.yt],['sl',g.ys]].forEach(function(h){ if(h[1]==null) return; var dd=Math.abs(y-h[1]), inZone=(y-g.ye)*(h[1]-g.ye)>0 && Math.abs(y-g.ye)<=Math.abs(h[1]-g.ye)+4;
+        var score=inZone?Math.min(dd,8):(dd<=26?dd+10:1e9); if(score<bd){ bd=score; best={t:t,which:h[0]}; } }); }); return best; }
+  function start(cx,cy){ if(!VE.on) return false; var q=rel(cx,cy), h=hit(q.x,q.y); if(!h) return false;
+    var g=veGeom(h.t); VE.drag={t:h.t,which:h.which,y:(h.which==='tp'?g.yt:g.ys),off:q.y-(h.which==='tp'?g.yt:g.ys),label:'',moved:false};
+    try{ chart.applyOptions({handleScroll:false,handleScale:false}); }catch(e){} if(ovReq) ovReq(); veInfo(); return true; }
+  function move(cx,cy){ if(!VE.drag) return; var q=rel(cx,cy); VE.drag.y=q.y-VE.drag.off; VE.drag.moved=true;
+    var pr=cSeries.coordinateToPrice(VE.drag.y), n=pr!=null?veNewSetting(VE.drag.t,VE.drag.which,pr):null; VE.drag.label=n?n.label:'too close to entry'; if(ovReq) ovReq(); }
+  function end(){ if(!VE.drag) return; var dg=VE.drag; VE.drag=null; try{ chart.applyOptions({handleScroll:true,handleScale:true}); }catch(e){}
+    if(dg.moved){ var pr=cSeries.coordinateToPrice(dg.y), n=pr!=null?veNewSetting(dg.t,dg.which,pr):null;
+      if(n){ VE.hist.push(JSON.parse(JSON.stringify(VE.s.sides))); VE.s.sides[veKey(dg.t.side)]=n.ss; toast((dg.t.side>0?'CALL ':'PUT ')+n.label.split(' (')[0]+' – applied to every '+(dg.t.side>0?'CALL':'PUT')+' trade',2500); } }
     renderSignals(); }
-  el_.addEventListener('pointerup',up,true); el_.addEventListener('pointercancel',up,true);
+  // touch (phones): raw touch events, so a vertical swipe can't turn into a page scroll and cancel the drag
+  el_.addEventListener('touchstart',function(e){ if(!VE.on||e.touches.length!==1) return; if(start(e.touches[0].clientX,e.touches[0].clientY)){ e.preventDefault(); e.stopPropagation(); } },{capture:true,passive:false});
+  el_.addEventListener('touchmove',function(e){ if(!VE.drag) return; e.preventDefault(); e.stopPropagation(); move(e.touches[0].clientX,e.touches[0].clientY); },{capture:true,passive:false});
+  el_.addEventListener('touchend',function(e){ if(!VE.drag) return; e.preventDefault(); e.stopPropagation(); end(); },{capture:true,passive:false});
+  el_.addEventListener('touchcancel',function(e){ if(VE.drag) end(); },{capture:true});
+  // mouse / pen
+  el_.addEventListener('pointerdown',function(e){ if(!VE.on) return; if(e.pointerType==='touch'){ if(VE.drag){ e.stopPropagation(); } return; } if(start(e.clientX,e.clientY)){ e.preventDefault(); e.stopPropagation(); try{ el_.setPointerCapture(e.pointerId); }catch(x){} } },true);
+  el_.addEventListener('pointermove',function(e){ if(!VE.drag) return; e.stopPropagation(); if(e.pointerType==='touch') return; move(e.clientX,e.clientY); },true);
+  el_.addEventListener('pointerup',function(e){ if(!VE.drag) return; e.stopPropagation(); if(e.pointerType==='touch') return; end(); },true);
+  el_.addEventListener('pointercancel',function(e){ if(VE.drag && e.pointerType!=='touch') end(); },true);
+  el_.addEventListener('mousedown',function(e){ if(VE.drag){ e.stopPropagation(); e.preventDefault(); } },true);
 })();
 window.__ve={st:function(){ return VE; },geom:function(t){ return veGeom(t); }};
 $('veCancel').onclick=function(){ veEnd(); toast('Edit cancelled',1500); };
