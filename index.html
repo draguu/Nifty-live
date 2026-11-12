@@ -2321,7 +2321,7 @@ function runBt(){
     if(!btDirty && btOn.c && btOn.p){ var so=S.strats.find(function(x){ return x.id===$('btStrat').value; }); if(so){ var vv=rs||st, keep=so.res&&so.res.tf===tf&&so.res.days===days&&so.res.sym===sym?so.res:{}; so.res={tf:tf,sym:sym,days:days,money:!!rs,net:vv.net,pf:vv.pf,n:vv.n,win:vv.win,good:keep.good,chk:keep.chk,mo:keep.mo,at:Date.now()}; save(); try{ renderStratList(); }catch(e){} } }
     // keep the Strategies page in sync: Backtest edits are saved to the strategy, and this run becomes its result line
     (function(){ var i=S.strats.findIndex(function(x){ return x.id===s.id; }); if(i<0) return; var cur=S.strats[i];
-      if(btDirty){ var nw=JSON.parse(JSON.stringify(s)); nw.onChart=cur.onChart; nw.color=cur.color; nw.bySym=cur.bySym; S.strats[i]=cur=nw; btWork=JSON.parse(JSON.stringify(nw)); btDirty=false; try{ renderSignals(); }catch(x){} }
+      if(btDirty){ var nw=JSON.parse(JSON.stringify(s)); nw.onChart=cur.onChart; nw.color=cur.color; nw.bySym=cur.bySym; S.strats[i]=cur=nw; btDirty=false; /* btWork stays the same object: the editor's fields keep writing into it */ try{ renderSignals(); }catch(x){} }
       var F=EX?EX.F:null; cur.res={tf:tf,sym:sym,days:days,money:!!rs,net:F?F.net:(rs?rs.net:st.net),mo:F?F.mo:null,chk:EX?EX.B.mo:null,pf:F?F.pf:st.pf,n:F?F.n:st.n,win:F?F.win:st.win,good:EX?(EX.B.mo>0&&EX.B.pf>=1.05):undefined,at:Date.now(),src:'bt'};
       save(); var q=$('btQState'); if(q) q.textContent='saved ✓'; })();
     html=html.replace(' <small class="mut">(edited, not saved)</small>','');
@@ -2585,10 +2585,10 @@ function btQuick(){
   else if(!s.sides && (s.dir||'both')==='both'){ var bsp=el('button',{class:'btn sm',style:'margin-bottom:6px'},'Separate CALL / PUT settings'); bsp.onclick=function(){ var b={pat:s.pat,sl:s.sl,tp:s.tp,start:s.start,end:s.end,sq:s.sq,maxTrades:s.maxTrades||0,maxLossDay:s.maxLossDay||0,stopAfterWin:!!s.stopAfterWin,holdBars:s.holdBars||0}; s.sides={long:JSON.parse(JSON.stringify(b)),short:JSON.parse(JSON.stringify(b))}; ch(); btQuick(); }; d2.appendChild(bsp); }
   var wrap=el('div',{class:'slwrap'}), lf=el('div',{class:'slf'}), live=el('div',{id:'btLive',class:'live'}); wrap.appendChild(lf); wrap.appendChild(live); d2.appendChild(wrap);
   var r3=el('div',{class:'row'}); var fv3=field('SL value (pts / % / ×ATR)',num(e.sl.v||'',function(v){e.sl.v=v;ch();})), fb3=field('SL buffer (pts)',num(e.sl.buf||0,function(v){e.sl.buf=v;ch();})), tv4;
-  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],e.sl.type||'pattern',function(v){ e.sl.type=v; slVis(e,fv3,fb3,tv4); ch(); })));
+  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],e.sl.type||'pattern',function(v){ e.sl.type=v; var px=btPx(); e.sl.v=v==='pts'?Math.max(1,Math.round(px*0.001)):v==='pct'?0.3:v==='atr'?1.5:0; if(v==='pattern'||v==='candle') e.sl.buf=e.sl.buf||0; ch(); btQuick(); })));
   r3.appendChild(fv3); r3.appendChild(fb3); lf.appendChild(r3);
   var r4=el('div',{class:'row',style:'margin-top:6px'});
-  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],e.tp.type||'R',function(v){ e.tp.type=v; slVis(e,fv3,fb3,tv4); ch(); })));
+  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],e.tp.type||'R',function(v){ e.tp.type=v; var px=btPx(); e.tp.v=v==='pts'?Math.max(1,Math.round(px*0.002)):v==='pct'?0.3:v==='R'?1.5:0; ch(); btQuick(); })));
   tv4=field('Target value',num(e.tp.v,function(v){e.tp.v=v;ch();})); r4.appendChild(tv4); slVis(e,fv3,fb3,tv4);
   r4.appendChild(field('Exit after N candles (0 = off)',num(e.holdBars||0,function(v){e.holdBars=v;ch();},1)));
   lf.appendChild(r4);
@@ -2617,6 +2617,7 @@ function btQuick(){
   var bd=el('button',{class:'btn sm',style:'color:var(--dn)'},'🗑 Delete'); bd.onclick=function(){ if(!bd.dataset.c){ bd.dataset.c=1; bd.textContent='Tap again to delete'; return; } S.strats=S.strats.filter(function(x){ return x.id!==s.id; }); btWork=null; btDirty=false; save(); fillBtStrat(); renderStratList(); renderSignals(); btQuick(); $('btOut').innerHTML=''; toast('Deleted',1500); };
   [bs,bn,ba,bd].forEach(function(b){ r6.appendChild(b); }); box.appendChild(r6);
 }
+function btPx(){ var T=BTLAST&&BTLAST.tr||[]; if(T.length) return T[T.length-1].entry; return (typeof D!=='undefined'&&D&&D.n)?D.c[D.n-1]:20000; }
 // live result next to stop / target: the trades of the side being edited (or all), from the last run
 function btLiveUpd(){ var L=$('btLive'); if(!L) return; var T=(BTLAST&&BTLAST.tr||[]).filter(function(t){ return t.why!=='Open'; });
   var s=btWork; if(s&&s.sides&&(s.dir||'both')==='both') T=T.filter(function(t){ return t.side===(btQSide==='short'?-1:1); });
