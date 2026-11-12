@@ -351,7 +351,8 @@ body.ve #chart,body.ve #chart *{touch-action:none!important}
         <label class="lbl">Period<select id="btDays">
           <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 3 months</option>
           <option value="180">Last 6 months</option><option value="365" selected>Last 1 year</option><option value="1095">Last 3 years</option><option value="1825">Last 5 years</option><option value="3650">Last 10 years (daily only)</option></select></label>
-        <label class="lbl">Slippage per trade (points)<input id="btCost" type="number" step="any" value="2"></label>
+        <label class="lbl" id="btCostL">Slippage per trade (points)<input id="btCost" type="number" step="any" value="2"></label>
+        <label class="lbl" id="btSlipL" style="display:none">Stock slippage per trade (%)<input id="btSlip" type="number" step="any" value="0.02"></label>
       </div>
       <details id="btMoney" class="fold"><summary><span>Charges &amp; size</span><span id="btMoneySum" class="mut small"></span></summary>
       <div class="row" style="margin-top:6px">
@@ -1013,6 +1014,17 @@ function defaults(){
 var S;
 try{ S=JSON.parse(localStorage.getItem(LS)||'null'); }catch(e){ S=null; }
 if(!S||!S.strats) S=defaults();
+// three stock (equity) strategies built from well-known, published ideas – % stops so they scale with any share price
+function eqStrats(){ var PX={k:'price',f:'close'}, VW={k:'ind',t:'VWAP',p:{},o:'value'}, E=function(n){ return {k:'ind',t:'EMA',p:{len:n,src:'close'},o:'value'}; }, R=function(n){ return {k:'ind',t:'RSI',p:{len:n},o:'value'}; }, N=function(v){ return {k:'num',v:v}; };
+  var base={lib:true,trigger:'first',maxLossDay:0,stopAfterWin:false,onChart:false,dir:'both',sq:'15:10'};
+  return [
+   Object.assign({},base,{id:uid(),name:'EQ · ORB 15 min + VWAP (stocks, 5m)',pattern:'orb_break',pat:{orbMins:15},long:[{a:PX,op:'>',b:VW}],short:[{a:PX,op:'<',b:VW}],
+     sl:{type:'pct',v:0.6,buf:0},tp:{type:'R',v:1},holdBars:0,start:'09:30',end:'11:30',maxTrades:1}),
+   Object.assign({},base,{id:uid(),name:'EQ · RSI(2) pullback in trend (stocks, 15m)',pattern:'none',pat:{},long:[{a:R(2),op:'<',b:N(10)},{a:PX,op:'>',b:E(200)}],short:[{a:R(2),op:'>',b:N(90)},{a:PX,op:'<',b:E(200)}],
+     sl:{type:'pct',v:0.9,buf:0},tp:{type:'pct',v:0.6},holdBars:8,start:'09:45',end:'14:30',maxTrades:2}),
+   Object.assign({},base,{id:uid(),name:'EQ · VWAP reclaim with EMA 20/50 trend (stocks, 5m)',pattern:'none',pat:{},long:[{a:E(20),op:'>',b:E(50)},{a:PX,op:'xa',b:VW},{a:R(14),op:'>',b:N(50)}],short:[{a:E(20),op:'<',b:E(50)},{a:PX,op:'xb',b:VW},{a:R(14),op:'<',b:N(50)}],
+     sl:{type:'pct',v:0.5,buf:0},tp:{type:'pct',v:0.5},holdBars:12,start:'09:45',end:'14:00',maxTrades:2})]; }
+if(!S.eqLib1){ S.eqLib1=true; eqStrats().forEach(function(x){ S.strats.push(x); }); }
 if(!S.keep3){ S.keep3=true; S.lib1=S.lib2=S.lib3=S.fibAdded=true; var K3=backupStrats();
   S.strats=K3.map(function(d){ var x=S.strats.find(function(y){ return y.name===d.name; }); return x||d; }); }
 if(!S.lib3){ S.lib3=true; S.lib2=true; S.strats=S.strats.filter(function(y){ return !(y.lib&&y.pattern==='mtf_pa'&&/^5m\/15m · /.test(y.name)&&y.name!=='5m/15m · all 6 rules combined'); }); stratLibrary2().forEach(function(x){ if(!S.strats.some(function(y){ return y.name===x.name; })) S.strats.push(x); }); }
@@ -1866,7 +1878,7 @@ function tuneAll(){
           var f=use.st.F; tgt.res={tf:use.tf,sym:sym,days:days,money:money,net:f.net,mo:f.perMon,chk:use.st.B.perMon,pf:f.pf,n:f.n,win:f.win,good:!!best,at:Date.now()}; save(); renderStratList(); }
         k++; return setTimeout(one,0); }
       var tf=tfs[ti++];
-      getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+symName(sym)+' '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){
+      getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+symName(sym)+' '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){ cost=costPts(sym,Dx);
         var src=orig; if(tSide!=='as'){ src=JSON.parse(JSON.stringify(orig)); src.dir=tSide; } // CALL only / PUT only / both, as picked in the Tune card
         tuneCore(src,Dx,tf,days,cost,cfg,obj,tf==='1m'?1:2,function(runs,si,bw){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'+(bw!=null?' · best win '+fmt(bw,1)+'%':'')+' · '+m()+(build&&found.some(function(f){return f.ok;})?' · ✅ one 60% found so far':''); },function(R){
           if(!R) return finish('Stopped.');
@@ -2116,7 +2128,7 @@ var btMarks=null, eqChart=null, chartTemp=null, BTLAST=null, BTUNDO=null;
 function fillBtStrat(){ var v=$('btStrat').value; $('btStrat').innerHTML=''; S.strats.forEach(function(s){ $('btStrat').appendChild(el('option',{value:s.id},s.name)); }); if(v && S.strats.some(function(s){return s.id===v;})) $('btStrat').value=v; }
 fillSym($('btSym'),S.sym);
 Object.keys(TF).forEach(function(tf){ $('btTf').appendChild(el('option',{value:tf},tf)); });
-$('btTf').value=S.bt.tf||'15m'; $('btDays').value=String(S.bt.days||365); $('btCost').value=S.bt.cost!=null?S.bt.cost:2;
+$('btTf').value=S.bt.tf||'15m'; $('btDays').value=String(S.bt.days||365); $('btCost').value=S.bt.cost!=null?S.bt.cost:2; $('btSlip').value=S.bt.slip!=null?S.bt.slip:0.02;
 // Pratik buys ₹120–150 strikes: premium defaults to ₹150 (the top of that range), so auto qty never buys more than the capital allows
 if(!S.prem150){ S.prem150=true; S.bt=S.bt||{}; S.bt.prem=150; S.bt.premP=150; S.ppPrem=150; save(); }
 $('btInst').value=S.bt.inst||'opt'; $('btQty').value=S.bt.qty||75; $('btPrem').value=S.bt.prem||150; $('btDelta').value=S.bt.delta||0.5;
@@ -2133,6 +2145,10 @@ function btAutoUI(){ var k=$('btInst').value, lot=lotOf($('btSym').value), can=(
     $('btAutoHint').innerHTML=h.join('<br>')+'<br><span class="mut">Premium = the most you pay per option (you buy ₹120–150 strikes → keep ₹150 so the lots are always affordable). '+symName($('btSym').value)+' lot = '+lot+'. '+($('btComp').checked?'With “grow with profit” on, each trade re-uses all the current capital, so lots go up after wins and down after losses.':'Same lots on every trade (from the starting capital).')+' Max lots isn’t the same as safe lots – see the 🎓 and drawdown numbers.</span>';
     $('btCompTxt').textContent='Grow with profit – recalculate lots from current capital every trade'; }
   else { $('btAutoHint').innerHTML=can?'<span class="mut">Type the qty yourself (multiples of '+lot+').</span>':''; $('btCompTxt').textContent='Add 1 lot when profit can buy 2 more lots'; } }
+// slippage: index points for Nifty / Bank Nifty / Sensex; for stocks a % of the price (2 points on a ₹1,400 share would be 0.14% per trade!)
+function costPts(sym,Dx){ if(!isStock(sym)) return +$('btCost').value||0; var pct=+$('btSlip').value; if(isNaN(pct)) pct=0.02;
+  var px=Dx&&Dx.n?Dx.c[Math.floor(Dx.n/2)]*0.5+Dx.c[Dx.n-1]*0.5:0; return px*pct/100; }
+function btSlipUI(){ var st=isStock($('btSym').value); $('btCostL').style.display=st?'none':''; $('btSlipL').style.display=st?'':'none'; }
 function isStock(sym){ return !!sym && sym.indexOf('idx:')!==0; }
 function btEqUI(){ var eq=$('btInst').value==='eq', cm=$('btComp').checked;
   Array.prototype.forEach.call(document.querySelectorAll('#btSides'),function(x){ if(eq) x.style.display='none'; });
@@ -2150,6 +2166,7 @@ btAutoInst();
 $('btSym').addEventListener('change',function(){ if(profLoad(this.value)){ try{ fillBtStrat(); btQuick(); renderSignals(); }catch(e){} toast('Loaded strategy settings for '+symName(this.value),2000); } btAutoInst(); $('btInst').onchange&&$('btInst').onchange(); });
 $('btLev').addEventListener('change',function(){ S.bt.lev=+this.value||5; save(); btEqUI(); });
 $('btCap').addEventListener('input',btEqUI);
+$('btSlip').addEventListener('change',function(){ S.bt.slip=+this.value; save(); }); $('btSym').addEventListener('change',btSlipUI); btSlipUI();
 $('btAuto').checked=S.bt.auto!==false;
 ['btCap','btPrem','btPremP','btMargin','btSym','btInst','btComp'].forEach(function(id){ $(id).addEventListener('input',btAutoUI); $(id).addEventListener('change',btAutoUI); });
 $('btAuto').addEventListener('change',function(){ S.bt.auto=this.checked; save(); btAutoUI(); });
@@ -2250,10 +2267,10 @@ function runBt(){
   var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0;
   var out=$('btOut'); out.innerHTML='<div class="card">Loading '+symName(sym)+' '+tf+' data…</div>';
   getBtData(sym,tf,days,btProg(out,'Loading '+symName(sym)+' '+tf)).then(function(Dx){
-    if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; }
+    if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; } cost=costPts(sym,Dx);
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
     var cut=btCut(Dx,days), tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=(BTLAST={tr:tr,sym:sym,slAt:{'1':JSON.parse(JSON.stringify(sideS(s,1).sl||{})),'-1':JSON.parse(JSON.stringify(sideS(s,-1).sl||{}))}},(function(){ try{ var A=indCalc(Dx,'ATR',{len:14}).value; tr.forEach(function(t){ t.atr0=A[t.sigI]; }); }catch(x){} })(),btCfg()), fx=(cfg.inst!=='pts'&&cfg.comp)?(function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var cl=tr.map(function(t){ return Object.assign({},t); }); rupeeTrades(cl,c2); return cl.filter(function(t){ return t.why!=='Open'; }).reduce(function(a,t){ return a+(t.rs||0); },0); })():null, rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
-    var html='<div class="card" data-k="sum"><h3 class="chd">'+s.name+sideTag()+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade'+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
+    var html='<div class="card" data-k="sum"><h3 class="chd">'+s.name+sideTag()+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+fmt(cost,2)+' pts/trade'+(isStock(sym)?' ('+(+$('btSlip').value||0.02)+'%)':'')+''+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
     if(rs) html+=rsCard(rs,cfg);
     // explain gaps between this backtest and the Tune result shown on the strategy line
     (function(){ var R=function(x){ return (x<0?'−':'')+'₹'+Math.abs(Math.round(x)).toLocaleString('en-IN'); }, notes=[], tr0=s.res;
@@ -2602,7 +2619,7 @@ $('btnTemp').onclick=function(){ chartTemp=null; btMarks=null; renderSignals(); 
 $('btAll').onclick=function(){
   var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut');
   out.innerHTML='<div class="card">Running all strategies…</div>';
-  getBtData(sym,tf,days,btProg(out,'Running all strategies')).then(function(Dx){
+  getBtData(sym,tf,days,btProg(out,'Running all strategies')).then(function(Dx){ cost=costPts(sym,Dx);
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
     var cut=btCut(Dx,days), cfg=btCfg(); var rows=S.strats.map(function(s){ var tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr); var rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null; return {s:s,st:st,rs:rs}; }).sort(function(a,b){ return a.rs&&b.rs? b.rs.net-a.rs.net : b.st.net-a.st.net; });
     out.innerHTML='<div class="card" data-k="all"><h3 class="chd">All strategies · '+symName(sym)+' '+tf+'</h3><div class="small mut">'+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts'+btSrcNote(Dx,cut,days)+'</div><div style="overflow:auto;margin-top:6px"><table><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net pts</th><th>DD</th>'+(cfg.inst!=='pts'?'<th>₹ net</th><th>₹ charges</th>':'')+'</tr>'+rows.map(function(r){ return '<tr><td>'+r.s.name+'</td><td>'+r.st.n+'</td><td>'+fmt(r.st.win,0)+'</td><td class="'+(r.st.pf>=1?'up':'dn')+'">'+fmt(r.st.pf)+'</td><td class="'+(r.st.net>=0?'up':'dn')+'">'+fmt(r.st.net,0)+'</td><td>'+fmt(r.st.dd,0)+'</td>'+(r.rs?'<td class="'+(r.rs.net>=0?'up':'dn')+'">'+Math.round(r.rs.net).toLocaleString('en-IN')+'</td><td>'+Math.round(r.rs.chg.total).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>'; btCollapse(out); if(rows.length){ var b0=rows[0]; btBarSet(b0.st,b0.rs,'best: '+b0.s.name+' · '+symName(sym)+' '+tf); }
@@ -2636,7 +2653,7 @@ function ppStart(){
   var cfg=ppCfg(); cfg.cap=amt; cfg.comp=$('ppComp').checked; var stk=isStock($('ppSym').value); cfg.inst=stk?'eq':(cfg.inst==='eq'?'opt':cfg.inst); cfg.lev=+S.bt.lev||5; var q=Math.max(1,+$('ppQty').value||1), pr=+$('ppPrem').value||150;
   cfg.call.qty=cfg.put.qty=q; cfg.call.prem=cfg.put.prem=pr; cfg.exp=$('ppExp').value;
   cfg.lot=lotOf($('ppSym').value); cfg.autoQty=!!cfg.lot && (cfg.inst==='opt'||cfg.inst==='fut');
-  S.paper={on:true,start:nowIST(),sym:$('ppSym').value,tf:$('ppTf').value,cost:+$('btCost').value||0,amt:amt,cfg:cfg,strats:strats,seen:null};
+  S.paper={on:true,start:nowIST(),sym:$('ppSym').value,tf:$('ppTf').value,cost:+$('btCost').value||0,slip:+$('btSlip').value||0.02,amt:amt,cfg:cfg,strats:strats,seen:null};
   save(); PP.bars=null; PP.res=null; ppRender(); ppRun(true);
 }
 function ppStop(){ var P=S.paper; if(!P) return; P.on=false; P.stopAt=nowIST(); save(); ppRender(); }
@@ -2652,7 +2669,7 @@ function ppRun(force){
     var bars=PP.bars.filter(function(x){ return x.time<=end; }); if(!bars.length){ PP.res=null; return; }
     var Dx=cols(bars), lc=Dx.n-1; if(P.tf!=='1d' && end<Dx.t[lc]+tfMin*60) lc--;
     var all=[]; P.strats.forEach(function(st,si){
-      backtest(Dx,st,tfMin,P.cost,lc).forEach(function(t){ if(Dx.t[t.sigI]+tfMin*60<=P.start) return; t.sn=st.name; t.col=st.color; t.si=si; all.push(t); }); });
+      backtest(Dx,st,tfMin,isStock(P.sym)?Dx.c[Dx.n-1]*(P.slip!=null?P.slip:0.02)/100:P.cost,lc).forEach(function(t){ if(Dx.t[t.sigI]+tfMin*60<=P.start) return; t.sn=st.name; t.col=st.color; t.si=si; all.push(t); }); });
     all.sort(function(a,b){ return a.t-b.t||a.si-b.si; });
     var cfg=JSON.parse(JSON.stringify(P.cfg)), rs=rupeeTrades(all,cfg), last=Dx.c[Dx.n-1];
     all.forEach(function(t){ if(t.why!=='Open') return; var sc=t.side>0?cfg.call:cfg.put, pts=(last-t.entry)*t.side; t.livePts=pts;
