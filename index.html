@@ -1708,6 +1708,7 @@ function tuneAll(){
   var sym=$('tuneSym').value, which=$('tuneWhich').value, obj=$('tuneObj').value, build=which==='build';
   S.tuneMinT=Math.max(1,+$('tuneMinT').value||20);
   if(profLoad(sym)){ renderStratList(); profLabel(); }
+  LASTTUNE={sym:sym,tf:$('tuneTf').value.split(',')[0],days:Math.round(365.25*(+$('tuneYrs').value||5)),id:build?null:(which==='all'?null:which),fresh:true};
   var tSide=$('tuneSide').value, tHold=$('tuneHold').value==='auto'?null:+$('tuneHold').value;
   var tfs=$('tuneTf').value.split(','), days=Math.round(365.25*(+$('tuneYrs').value||5)), cost=+$('btCost').value||0, cfg=btCfg(), out=$('tuneOut'), k=0, money=cfg.inst!=='pts'; cfg.comp=false;
   if(isStock(sym)&&cfg.inst!=='pts'){ cfg.inst='eq'; cfg.lev=+S.bt.lev||5; } else if(cfg.inst==='eq') cfg.inst='opt';
@@ -1717,7 +1718,7 @@ function tuneAll(){
   TA.run=true; TA.stop=false; $('tuneAll').textContent='■ Stop'; wakeOn(); var okN=0, t00=Date.now(), found=[];
   var pick=function(x){ return JSON.parse(JSON.stringify({pat:x.pat||{},sl:x.sl,tp:x.tp,start:x.start,end:x.end,sq:x.sq,maxTrades:x.maxTrades||0,maxLossDay:x.maxLossDay||0,stopAfterWin:!!x.stopAfterWin,holdBars:x.holdBars||0,trail:x.trail||null,dca:x.dca||null})); };
   var m=function(x){ return Math.round((Date.now()-t00)/60000)+' min'; };
-  function finish(msg){ TA.run=false; wakeOff(); $('tuneAll').innerHTML='✨ Start tuning';
+  function finish(msg){ TA.run=false; wakeOff(); btWork=null; btDirty=false; LASTTUNE.fresh=true; $('tuneAll').innerHTML='✨ Start tuning';
     if(build){
       found.sort(function(a,b){ return (b.ok-a.ok)||(b.st.B.win>=60)-(a.st.B.win>=60)||b.st.F.perMon-a.st.F.perMon; });
       var top=found.slice(0,5).map(function(f){ var F=f.st.F,B=f.st.B; return '<tr><td>'+f.name+' <span class="mut">'+f.tf+'</span></td><td>'+fmt(F.win,0)+'%</td><td>'+fmt(B.win,0)+'%</td><td>'+fmt(F.tpm,0)+'</td><td class="'+(F.perMon>=0?'up':'dn')+'">'+fmtL(F.perMon,money)+'</td></tr>'; }).join('');
@@ -1785,7 +1786,7 @@ function renderStratList(){
       a.id=uid(); b.id=uid(); a.dir='long'; b.dir='short'; a.name='CALL · '+s.name; b.name='PUT · '+s.name; a.color=null; b.color=null; [a,b].forEach(function(x){ if(x.bySym) for(var k in x.bySym) x.bySym[k].dir=x.dir; delete x.res; });
       S.strats.splice(idx,1,a,b); stratColor(a); stratColor(b); save(); renderStratList(); renderSignals(); toast('Split into two strategies – tune each one separately',3000); }; tr.appendChild(sp); }
     det.appendChild(tr);
-    [['Edit',function(){ editStrategy(s); }],['Backtest',function(){ $('btStrat').value=s.id; showView('bt'); }],['Export',function(){ exportStrat(s); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
+    [['Edit',function(){ editStrategy(s); }],['Backtest',function(){ btGoto(S.profSym||S.sym,s.id,s.res&&s.res.tf,s.res&&s.res.days); btWork=null; btDirty=false; showView('bt'); }],['Export',function(){ exportStrat(s); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
     var cp=el('input',{type:'color',value:stratColor(s),title:'Colour on chart',style:'width:36px;height:30px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none'}); cp.onchange=function(){ s.color=cp.value; save(); renderStratList(); renderSignals(); }; acts.appendChild(cp);
     det.appendChild(acts); c.appendChild(det); box.appendChild(c);
   });
@@ -2530,16 +2531,25 @@ setInterval(function(){ if(S.paper&&S.paper.on&&!document.hidden) ppRun(); },300
 document.addEventListener('visibilitychange',function(){ if(!document.hidden&&S.paper&&S.paper.on) ppRun(); });
 if(S.paper) ppRun(true);
 function isDesk(){ var L=S.layout||'auto'; return L==='desktop' || (L==='auto' && window.innerWidth>=1000); }
-var curView='chart', BTM={id:null};
+var curView='chart', BTM={id:null}, LASTTUNE=null;
 function applyLayout(){ var d=isDesk(); document.body.classList.toggle('desk',d); document.body.classList.toggle('pwide',!!S.pwide);
   document.body.classList.toggle('panel',d && curView!=='chart'); if(d && curView==='chart' && !S.deskInit){ S.deskInit=true; } }
+function btGoto(sym,id,tf,days){
+  if(sym && $('btSym').value!==sym){ $('btSym').value=sym; try{ btAutoInst(); }catch(e){} }
+  if(id && S.strats.some(function(x){ return x.id===id; })){ fillBtStrat(); $('btStrat').value=id; BTM.id=id; }
+  if(tf && TF[tf]) $('btTf').value=tf;
+  if(days){ var best=null; Array.prototype.forEach.call($('btDays').options,function(o){ if(!best||Math.abs(+o.value-days)<Math.abs(+best.value-days)) best=o; }); if(best) $('btDays').value=best.value; } }
 function showView(v){
   if(isDesk() && v==='chart' && curView==='chart'){ } curView=v;
   ['chart','strats','bt','paper','set'].forEach(function(x){ $('v-'+x).className='view'+(x===v?' on':''); });
   applyLayout();
   Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'),function(b){ b.className=b.dataset.v===v?'on':''; });
   if(v==='strats') renderStratList();
-  if(v==='bt'){ profLoad($('btSym').value); fillBtStrat(); if(BTM.id!==$('btStrat').value){ BTM.id=$('btStrat').value; btMatchRes(false); } btQuick(); }
+  if(v==='bt'){
+    // coming from Tune: open the same symbol, strategy, timeframe and period that were just tuned
+    if(LASTTUNE&&LASTTUNE.fresh){ LASTTUNE.fresh=false; btGoto(LASTTUNE.sym,LASTTUNE.id,LASTTUNE.tf,LASTTUNE.days); }
+    profLoad($('btSym').value); fillBtStrat(); if(!btDirty) btWork=null; // always show the saved (latest tuned) settings unless you're mid-edit
+    if(BTM.id!==$('btStrat').value){ BTM.id=$('btStrat').value; btMatchRes(false); } btQuick(); }
   if(v==='chart'||v==='strats'){ if(profLoad(S.sym)){ try{ renderSignals(); }catch(e){} } if(v==='strats'){ renderStratList(); profLabel(); } }
   if(v==='paper') ppRender();
 }
