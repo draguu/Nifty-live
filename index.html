@@ -1752,6 +1752,11 @@ function tuneAll(){
   }
   one();
 }
+// export one strategy (all its per-symbol settings) as code – copied to clipboard and saved as a .json file; Settings → Import… reads it back
+function exportStrat(st){ var o=JSON.parse(JSON.stringify(st)); delete o.onChart; var txt=JSON.stringify({strats:[o]},null,1), name=(st.name||'strategy').replace(/[^\w\-]+/g,'_').slice(0,40)+'.json';
+  try{ var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1000); }catch(e){}
+  var done=function(ok){ toast((ok?'Copied “'+st.name+'” to clipboard and saved '+name:'Saved '+name)+'. To load it: Settings → Import…, paste, Import.',4500); };
+  try{ navigator.clipboard.writeText(txt).then(function(){ done(true); },function(){ done(false); }); }catch(e){ done(false); } }
 function renderStratList(){
   var box=$('stratList'); box.innerHTML='';
   if(!S.strats.length) box.appendChild(el('p',{class:'hint'},'No strategies. Tap + New.'));
@@ -1774,7 +1779,7 @@ function renderStratList(){
       a.id=uid(); b.id=uid(); a.dir='long'; b.dir='short'; a.name='CALL · '+s.name; b.name='PUT · '+s.name; a.color=null; b.color=null; [a,b].forEach(function(x){ if(x.bySym) for(var k in x.bySym) x.bySym[k].dir=x.dir; delete x.res; });
       S.strats.splice(idx,1,a,b); stratColor(a); stratColor(b); save(); renderStratList(); renderSignals(); toast('Split into two strategies – tune each one separately',3000); }; tr.appendChild(sp); }
     det.appendChild(tr);
-    [['Edit',function(){ editStrategy(s); }],['Backtest',function(){ $('btStrat').value=s.id; showView('bt'); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
+    [['Edit',function(){ editStrategy(s); }],['Backtest',function(){ $('btStrat').value=s.id; showView('bt'); }],['Export',function(){ exportStrat(s); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
     var cp=el('input',{type:'color',value:stratColor(s),title:'Colour on chart',style:'width:36px;height:30px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none'}); cp.onchange=function(){ s.color=cp.value; save(); renderStratList(); renderSignals(); }; acts.appendChild(cp);
     det.appendChild(acts); c.appendChild(det); box.appendChild(c);
   });
