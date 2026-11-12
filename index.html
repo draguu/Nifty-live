@@ -1397,20 +1397,22 @@ function veInfo(){ if(!VE.on) return; var T=VE.tr.filter(function(t){ return t.w
     (VE.drag?'':' <span class="mut">· drag a green or red line</span>'); }
 function veGeom(t){ var k=Math.min(D.n-1,t.sigI+1), e=Math.min(D.n-1,t.exI), ts=chart.timeScale(), x0=ts.logicalToCoordinate(k), x1=ts.logicalToCoordinate(Math.max(k,e)), sp=ts.options().barSpacing||8;
   if(x0==null||x1==null) return null; var st0=t.risk>0?t.entry-t.side*t.risk:null;
-  return {x0:x0-sp/2,x1:x1+sp/2,ye:cSeries.priceToCoordinate(t.entry),ys:st0!=null?cSeries.priceToCoordinate(st0):null,yt:!isNaN(t.tgt)&&t.tgt!=null?cSeries.priceToCoordinate(t.tgt):null,stop0:st0}; }
+  return {x0:x0-sp/2,x1:Math.max(x1+sp/2,x0-sp/2+18),ye:cSeries.priceToCoordinate(t.entry),ys:st0!=null?cSeries.priceToCoordinate(st0):null,yt:!isNaN(t.tgt)&&t.tgt!=null?cSeries.priceToCoordinate(t.tgt):null,stop0:st0}; }
 function veDraw(ctx,size,ts,r){ var lo=Math.floor(r.from)-2, hi=Math.ceil(r.to)+2;
-  VE.tr.forEach(function(t){ if(t.exI<lo||t.sigI>hi) return; var g=veGeom(t); if(!g||g.ye==null) return; var w=Math.max(4,g.x1-g.x0);
-    var dg=VE.drag&&VE.drag.t===t?VE.drag:null, ys=dg&&dg.which==='sl'?dg.y:g.ys, yt=dg&&dg.which==='tp'?dg.y:g.yt;
+  if(VE.drag){ ctx.save(); ctx.strokeStyle=VE.drag.which==='tp'?'rgba(38,166,154,.8)':'rgba(239,83,80,.8)'; ctx.setLineDash([6,4]); ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,VE.drag.y); ctx.lineTo(size.width,VE.drag.y); ctx.stroke(); ctx.restore(); }
+  VE.tr.forEach(function(t){ if(t.exI<lo||t.sigI>hi) return; var g=veGeom(t); if(!g||g.ye==null) return; var w=Math.max(18,g.x1-g.x0);
+    var dg=VE.drag&&VE.drag.t.sigI===t.sigI&&VE.drag.t.side===t.side?VE.drag:null, ys=dg&&dg.which==='sl'?dg.y:g.ys, yt=dg&&dg.which==='tp'?dg.y:g.yt;
+    var sideOn=VE.drag&&VE.drag.t.side===t.side;
     ctx.save();
-    if(yt!=null){ ctx.fillStyle='rgba(38,166,154,.16)'; ctx.fillRect(g.x0,Math.min(g.ye,yt),w,Math.abs(yt-g.ye)); ctx.strokeStyle='#26a69a'; ctx.lineWidth=dg&&dg.which==='tp'?3:2; ctx.beginPath(); ctx.moveTo(g.x0,yt); ctx.lineTo(g.x0+w,yt); ctx.stroke(); }
-    if(ys!=null){ ctx.fillStyle='rgba(239,83,80,.14)'; ctx.fillRect(g.x0,Math.min(g.ye,ys),w,Math.abs(ys-g.ye)); ctx.strokeStyle='#ef5350'; ctx.lineWidth=dg&&dg.which==='sl'?3:2; ctx.beginPath(); ctx.moveTo(g.x0,ys); ctx.lineTo(g.x0+w,ys); ctx.stroke(); }
+    if(yt!=null){ ctx.fillStyle=sideOn?'rgba(38,166,154,.30)':'rgba(38,166,154,.20)'; ctx.fillRect(g.x0,Math.min(g.ye,yt),w,Math.abs(yt-g.ye)); ctx.strokeStyle='#26a69a'; ctx.lineWidth=dg&&dg.which==='tp'?4:2.5; ctx.beginPath(); ctx.moveTo(g.x0,yt); ctx.lineTo(g.x0+w,yt); ctx.stroke(); }
+    if(ys!=null){ ctx.fillStyle=sideOn?'rgba(239,83,80,.30)':'rgba(239,83,80,.20)'; ctx.fillRect(g.x0,Math.min(g.ye,ys),w,Math.abs(ys-g.ye)); ctx.strokeStyle='#ef5350'; ctx.lineWidth=dg&&dg.which==='sl'?4:2.5; ctx.beginPath(); ctx.moveTo(g.x0,ys); ctx.lineTo(g.x0+w,ys); ctx.stroke(); }
     ctx.strokeStyle='rgba(200,206,220,.7)'; ctx.lineWidth=1; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(g.x0,g.ye); ctx.lineTo(g.x0+w,g.ye); ctx.stroke(); ctx.setLineDash([]);
     // grab handles
-    [[yt,'#26a69a'],[ys,'#ef5350']].forEach(function(h){ if(h[0]==null) return; ctx.fillStyle=h[1]; ctx.beginPath(); ctx.arc(g.x0+w/2,h[0],4.5,0,6.3); ctx.fill(); });
+    [[yt,'#26a69a'],[ys,'#ef5350']].forEach(function(h){ if(h[0]==null) return; ctx.fillStyle=h[1]; ctx.beginPath(); ctx.arc(g.x0+w/2,h[0],6,0,6.3); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke(); });
     if(dg){ ctx.font='bold 11px -apple-system,Segoe UI,Roboto,sans-serif'; var txt=dg.label||''; var tw=ctx.measureText(txt).width+10, yy=dg.y+(dg.y<g.ye?-14:14);
       var lx=g.x0+w+6; if(lx+tw>size.width-4) lx=Math.max(4,g.x0-tw-6); ctx.fillStyle='rgba(13,16,23,.92)'; ctx.fillRect(lx,yy-9,tw,18); ctx.fillStyle=dg.which==='tp'?'#26a69a':'#ef5350'; ctx.fillText(txt,lx+5,yy+4); }
     ctx.restore(); }); }
-function veNewSetting(t,which,price){ var side=t.side, ss=JSON.parse(JSON.stringify(VE.s.sides[veKey(side)])), d=(price-t.entry)*side, risk=t.risk>0?t.risk:Math.abs(t.entry-t.stop)||1, r2=function(x,n){ var m=Math.pow(10,n||2); return Math.round(x*m)/m; };
+function veNewSetting(t,which,price,base){ var side=t.side, ss=JSON.parse(JSON.stringify(base||VE.s.sides[veKey(side)])), d=(price-t.entry)*side, risk=t.risk>0?t.risk:Math.abs(t.entry-t.stop)||1, r2=function(x,n){ var m=Math.pow(10,n||2); return Math.round(x*m)/m; };
   if(which==='tp'){ if(d<=0.5) return null; var tp=ss.tp||{type:'R',v:1};
     if(tp.type==='pct') tp={type:'pct',v:r2(d/t.entry*100,3)}; else if(tp.type==='pts') tp={type:'pts',v:r2(d,1)}; else tp={type:'R',v:r2(d/risk,2)};
     ss.tp=tp; return {ss:ss,label:'TP '+(tp.type==='R'?tp.v+'R':tp.type==='pct'?tp.v+'%':tp.v+' pts')+' (+'+fmt(d,1)+' pts)'}; }
@@ -1427,13 +1429,17 @@ function veNewSetting(t,which,price){ var side=t.side, ss=JSON.parse(JSON.string
       [['tp',g.yt],['sl',g.ys]].forEach(function(h){ if(h[1]==null) return; var dd=Math.abs(y-h[1]), inZone=(y-g.ye)*(h[1]-g.ye)>0 && Math.abs(y-g.ye)<=Math.abs(h[1]-g.ye)+4;
         var score=inZone?Math.min(dd,8):(dd<=26?dd+10:1e9); if(score<bd){ bd=score; best={t:t,which:h[0]}; } }); }); return best; }
   function start(cx,cy){ if(!VE.on) return false; var q=rel(cx,cy), h=hit(q.x,q.y); if(!h) return false;
-    var g=veGeom(h.t); VE.drag={t:h.t,which:h.which,y:(h.which==='tp'?g.yt:g.ys),off:q.y-(h.which==='tp'?g.yt:g.ys),label:'',moved:false};
+    var g=veGeom(h.t); VE.drag={t:h.t,which:h.which,y:(h.which==='tp'?g.yt:g.ys),off:q.y-(h.which==='tp'?g.yt:g.ys),label:'',moved:false,key:veKey(h.t.side),base:JSON.parse(JSON.stringify(VE.s.sides[veKey(h.t.side)])),all:JSON.parse(JSON.stringify(VE.s.sides))};
     try{ chart.applyOptions({handleScroll:false,handleScale:false}); }catch(e){} if(ovReq) ovReq(); veInfo(); return true; }
-  function move(cx,cy){ if(!VE.drag) return; var q=rel(cx,cy); VE.drag.y=q.y-VE.drag.off; VE.drag.moved=true;
-    var pr=cSeries.coordinateToPrice(VE.drag.y), n=pr!=null?veNewSetting(VE.drag.t,VE.drag.which,pr):null; VE.drag.label=n?n.label:'too close to entry'; if(ovReq) ovReq(); }
+  var raf=0;
+  function move(cx,cy){ if(!VE.drag) return; var q=rel(cx,cy), dg=VE.drag; dg.y=q.y-dg.off; dg.moved=true;
+    var pr=cSeries.coordinateToPrice(dg.y), n=pr!=null?veNewSetting(dg.t,dg.which,pr,dg.base):null; dg.label=n?n.label:'too close to entry';
+    // live: every trade of this side is re-tested with the new value while the finger moves
+    if(n){ VE.s.sides[dg.key]=n.ss; if(!raf) raf=requestAnimationFrame(function(){ raf=0; renderSignals(); }); } else if(ovReq) ovReq(); }
   function end(){ if(!VE.drag) return; var dg=VE.drag; VE.drag=null; try{ chart.applyOptions({handleScroll:true,handleScale:true}); }catch(e){}
-    if(dg.moved){ var pr=cSeries.coordinateToPrice(dg.y), n=pr!=null?veNewSetting(dg.t,dg.which,pr):null;
-      if(n){ VE.hist.push(JSON.parse(JSON.stringify(VE.s.sides))); VE.s.sides[veKey(dg.t.side)]=n.ss; toast((dg.t.side>0?'CALL ':'PUT ')+n.label.split(' (')[0]+' – applied to every '+(dg.t.side>0?'CALL':'PUT')+' trade',2500); } }
+    if(dg.moved){ var pr=cSeries.coordinateToPrice(dg.y), n=pr!=null?veNewSetting(dg.t,dg.which,pr,dg.base):null;
+      if(!n) VE.s.sides=dg.all;
+      if(n){ VE.hist.push(dg.all); VE.s.sides[dg.key]=n.ss; toast((dg.t.side>0?'CALL ':'PUT ')+n.label.split(' (')[0]+' – applied to every '+(dg.t.side>0?'CALL':'PUT')+' trade',2500); } }
     renderSignals(); }
   // touch (phones): raw touch events, so a vertical swipe can't turn into a page scroll and cancel the drag
   el_.addEventListener('touchstart',function(e){ if(!VE.on||e.touches.length!==1) return; if(start(e.touches[0].clientX,e.touches[0].clientY)){ e.preventDefault(); e.stopPropagation(); } },{capture:true,passive:false});
