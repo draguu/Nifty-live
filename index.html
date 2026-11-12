@@ -1729,9 +1729,15 @@ $('btnStratOn').onclick=function(){ showView('strats'); };
 // ---------------- strategies UI ----------------
 function stratSummary(s){
   var parts=[]; parts.push(PATTERNS[s.pattern||'none'].name.split(' —')[0]);
-  var sl={pattern:'SL: pattern candles',candle:'SL: signal candle',pts:'SL '+(s.sl&&s.sl.v)+' pts',pct:'SL '+(s.sl&&s.sl.v)+'%',atr:'SL '+(s.sl&&s.sl.v)+'×ATR'}[(s.sl||{}).type||'pattern'];
-  var tp={R:'TP '+(s.tp&&s.tp.v)+'R',pts:'TP '+(s.tp&&s.tp.v)+' pts',pct:'TP '+(s.tp&&s.tp.v)+'%',none:'no TP'}[(s.tp||{}).type||'R'];
-  return '<span class="pill">'+parts[0]+'</span>'+(s.long||[]).map(function(c){return '<span class="pill up">▲ '+condLabel(c)+'</span>';}).join('')+(s.short||[]).map(function(c){return '<span class="pill dn">▼ '+condLabel(c)+'</span>';}).join('')+'<span class="pill">'+sl+'</span><span class="pill">'+tp+'</span><span class="pill">'+(s.start||'09:15')+'–'+(s.end||'15:00')+', exit '+(s.sq||'15:15')+'</span>'+(+s.maxTrades?'<span class="pill">max '+s.maxTrades+'/day</span>':'')+(s.stopAfterWin?'<span class="pill">stop after win</span>':'');
+  function exits(x){ var sl={pattern:'SL pattern candles'+(x.sl&&+x.sl.buf?' +'+x.sl.buf:''),candle:'SL signal candle'+(x.sl&&+x.sl.buf?' +'+x.sl.buf:''),pts:'SL '+(x.sl&&x.sl.v)+' pts',pct:'SL '+(x.sl&&x.sl.v)+'%',atr:'SL '+(x.sl&&x.sl.v)+'×ATR'}[(x.sl||{}).type||'pattern'];
+    var tp={R:'TP '+(x.tp&&x.tp.v)+'R',pts:'TP '+(x.tp&&x.tp.v)+' pts',pct:'TP '+(x.tp&&x.tp.v)+'%',none:'no TP'}[(x.tp||{}).type||'R'];
+    var tr=x.trail&&x.trail.type&&x.trail.type!=='none'?(x.trail.type==='be'?'stop→cost':'trail '+x.trail.v+(x.trail.type==='pct'?'%':x.trail.type==='pts'?' pts':'R')):'';
+    return [sl,tp,(x.start||'09:15')+'–'+(x.end||'15:00')+', exit '+(x.sq||'15:15'),+x.holdBars?'exit after '+x.holdBars+' candles':'',+x.maxTrades?'max '+x.maxTrades+'/day':'',x.stopAfterWin?'stop after win':'',tr,x.dca&&+x.dca.n?'DCA ×'+x.dca.n:''].filter(Boolean).map(function(t){ return '<span class="pill">'+t+'</span>'; }).join(''); }
+  var conds='<span class="pill">'+parts[0]+'</span>'+(s.long||[]).map(function(c){return '<span class="pill up">▲ '+condLabel(c)+'</span>';}).join('')+(s.short||[]).map(function(c){return '<span class="pill dn">▼ '+condLabel(c)+'</span>';}).join('');
+  // tuning and Backtest save separate CALL / PUT settings – show those (the ones actually used), not the old shared ones
+  var d=s.dir||'both';
+  if(s.sides&&s.sides.long&&s.sides.short) return conds+(d!=='short'?'<div style="margin-top:4px"><b class="up small">CALL</b> '+exits(sideS(s,1))+'</div>':'')+(d!=='long'?'<div style="margin-top:4px"><b class="dn small">PUT</b> '+exits(sideS(s,-1))+'</div>':'');
+  return conds+exits(s);
 }
 var stOpen={};
 function fmtL(x,money){ if(!money) return fmt(x,0)+' pts'; var a=Math.abs(x), sg=x<0?'−':'+'; return sg+'₹'+(a>=1e7?(a/1e7).toFixed(2)+'Cr':a>=1e5?(a/1e5).toFixed(2)+'L':a>=1e3?(a/1e3).toFixed(1)+'k':Math.round(a)); }
@@ -1833,7 +1839,7 @@ function tuneAll(){
   TA.run=true; TA.stop=false; $('tuneAll').textContent='■ Stop'; wakeOn(); var okN=0, t00=Date.now(), found=[];
   var pick=function(x){ return JSON.parse(JSON.stringify({pat:x.pat||{},sl:x.sl,tp:x.tp,start:x.start,end:x.end,sq:x.sq,maxTrades:x.maxTrades||0,maxLossDay:x.maxLossDay||0,stopAfterWin:!!x.stopAfterWin,holdBars:x.holdBars||0,trail:x.trail||null,dca:x.dca||null})); };
   var m=function(x){ return Math.round((Date.now()-t00)/60000)+' min'; };
-  function finish(msg){ TA.run=false; wakeOff(); btWork=null; btDirty=false; LASTTUNE.fresh=true; $('tuneAll').innerHTML='✨ Start tuning';
+  function finish(msg){ TA.run=false; wakeOff(); btWork=null; btDirty=false; BTUNDO=null; LASTTUNE.fresh=true; $('tuneAll').innerHTML='✨ Start tuning';
     if(build){
       found.sort(function(a,b){ return (b.ok-a.ok)||(b.st.B.win>=60)-(a.st.B.win>=60)||b.st.F.perMon-a.st.F.perMon; });
       var top=found.slice(0,5).map(function(f){ var F=f.st.F,B=f.st.B; return '<tr><td>'+f.name+' <span class="mut">'+f.tf+'</span></td><td>'+fmt(F.win,0)+'%</td><td>'+fmt(B.win,0)+'%</td><td>'+fmt(F.tpm,0)+'</td><td class="'+(F.perMon>=0?'up':'dn')+'">'+fmtL(F.perMon,money)+'</td></tr>'; }).join('');
@@ -2106,7 +2112,7 @@ function editStrategy(orig,isNew){
 }
 
 // ---------------- backtest UI ----------------
-var btMarks=null, eqChart=null, chartTemp=null, BTLAST=null;
+var btMarks=null, eqChart=null, chartTemp=null, BTLAST=null, BTUNDO=null;
 function fillBtStrat(){ var v=$('btStrat').value; $('btStrat').innerHTML=''; S.strats.forEach(function(s){ $('btStrat').appendChild(el('option',{value:s.id},s.name)); }); if(v && S.strats.some(function(s){return s.id===v;})) $('btStrat').value=v; }
 fillSym($('btSym'),S.sym);
 Object.keys(TF).forEach(function(tf){ $('btTf').appendChild(el('option',{value:tf},tf)); });
@@ -2246,7 +2252,7 @@ function runBt(){
   getBtData(sym,tf,days,btProg(out,'Loading '+symName(sym)+' '+tf)).then(function(Dx){
     if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; }
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
-    var cut=btCut(Dx,days), tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=(BTLAST={tr:tr,sym:sym},btCfg()), fx=(cfg.inst!=='pts'&&cfg.comp)?(function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var cl=tr.map(function(t){ return Object.assign({},t); }); rupeeTrades(cl,c2); return cl.filter(function(t){ return t.why!=='Open'; }).reduce(function(a,t){ return a+(t.rs||0); },0); })():null, rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
+    var cut=btCut(Dx,days), tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=(BTLAST={tr:tr,sym:sym,slAt:{'1':JSON.parse(JSON.stringify(sideS(s,1).sl||{})),'-1':JSON.parse(JSON.stringify(sideS(s,-1).sl||{}))}},(function(){ try{ var A=indCalc(Dx,'ATR',{len:14}).value; tr.forEach(function(t){ t.atr0=A[t.sigI]; }); }catch(x){} })(),btCfg()), fx=(cfg.inst!=='pts'&&cfg.comp)?(function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var cl=tr.map(function(t){ return Object.assign({},t); }); rupeeTrades(cl,c2); return cl.filter(function(t){ return t.why!=='Open'; }).reduce(function(a,t){ return a+(t.rs||0); },0); })():null, rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
     var html='<div class="card" data-k="sum"><h3 class="chd">'+s.name+sideTag()+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade'+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
     if(rs) html+=rsCard(rs,cfg);
     // explain gaps between this backtest and the Tune result shown on the strategy line
@@ -2257,10 +2263,11 @@ function runBt(){
         notes.push('Tune result on the strategy line: <b>'+fmtL(tr0.net,true)+'</b> on '+tr0.tf+' over '+Math.round((tr0.days||1825)/365)+' years (fixed size).'+(diff.length?' It was tested on '+diff.join(', ')+' – <a href="#" id="btMatch">match those settings</a>.':'')); }
       if(notes.length) html+='<div class="card" style="border-left:3px solid var(--warn)"><p class="hint" style="margin:0">'+notes.join('<br><br>')+'</p></div>'; })();
     // learn vs exam: settings should be judged on the first 70%; the last 30% is the "exam" they must also pass
+    var EX=null;
     (function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var T=tr.filter(function(t){ return t.why!=='Open'; }).map(function(t){ return Object.assign({},t); }); if(rs) rupeeTrades(T,c2);
       if(T.length<10) return; var t0=Dx.t[cut.i], t1=Dx.t[lc], sp=t0+(t1-t0)*0.7, MD=30.44*86400;
       var pr=function(A,mons){ var n=A.length,w=0,gp=0,gl=0,net=0; A.forEach(function(t){ var v=rs?t.rs:t.pts; net+=v; if(v>0){w++;gp+=v;} else gl-=v; }); return {n:n,win:n?100*w/n:0,pf:gl>0?gp/gl:(gp>0?99:0),mo:net/Math.max(1,mons),net:net}; };
-      var A=pr(T.filter(function(t){ return t.t<sp; }),(sp-t0)/MD), B=pr(T.filter(function(t){ return t.t>=sp; }),(t1-sp)/MD);
+      var A=pr(T.filter(function(t){ return t.t<sp; }),(sp-t0)/MD), B=pr(T.filter(function(t){ return t.t>=sp; }),(t1-sp)/MD); EX={A:A,B:B,F:pr(T,(t1-t0)/MD)};
       var f=function(x){ return rs?fmtL(x,true):fmt(x,0)+' pts'; }, ok=B.mo>0 && B.pf>=1.05, weak=B.mo>0 && B.mo<0.5*A.mo;
       var row=function(l,x){ return '<tr><td>'+l+'</td><td>'+x.n+'</td><td>'+fmt(x.win,1)+'%</td><td>'+fmt(x.pf,2)+'</td><td class="'+(x.mo>=0?'up':'dn')+'">'+f(x.mo)+'</td></tr>'; };
       html+='<div class="card" data-k="exam" style="border-left:3px solid '+(ok&&!weak?'var(--up)':ok?'var(--warn)':'var(--dn)')+'"><b>🎓 Does it hold up on later data?</b>'+
@@ -2285,7 +2292,13 @@ function runBt(){
     html+='<div class="card" data-k="mon"><h4 class="chd" style="margin-top:0">By month</h4><div style="max-height:220px;overflow:auto"><table><tr><th>Month</th><th>Trades</th><th>Win%</th><th>Points</th>'+(rs?'<th>₹ net</th>':'')+'</tr>'+Object.keys(mon).sort().reverse().map(function(k){ var m=mon[k]; return '<tr><td>'+k+'</td><td>'+m.n+'</td><td>'+fmt(100*m.w/m.n,0)+'</td><td class="'+(m.p>=0?'up':'dn')+'">'+fmt(m.p,1)+'</td>'+(rs?'<td class="'+(m.r>=0?'up':'dn')+'">'+Math.round(m.r).toLocaleString('en-IN')+'</td>':'')+'</tr>'; }).join('')+'</table></div></div>';
     html+='<div class="card" data-k="trades"><div class="row chd"><h4 class="grow" style="margin:0">Trades ('+tr.length+')</h4><button class="btn sm" id="btShow">Show on chart</button></div><div style="max-height:360px;overflow:auto;margin-top:6px"><table><tr><th>Date</th><th>Side</th><th>Entry</th><th>SL</th><th>TP</th><th>Exit</th><th>Why</th><th>Pts</th>'+(rs?(rs.comp?'<th>Lots</th>':'')+'<th>₹ net</th>'+(rs.comp?'<th>Capital</th>':''):'')+'</tr>'+tr.slice().reverse().map(function(t){ return '<tr><td>'+dmy(t.t)+' '+(tf==='1d'?'':hhmm(t.t))+'</td><td class="'+(t.side>0?'up':'dn')+'">'+(t.side>0?'CALL':'PUT')+'</td><td>'+fmt(t.entry,1)+'</td><td>'+fmt(t.stop,1)+'</td><td>'+fmt(t.tgt,1)+'</td><td>'+fmt(t.exit,1)+'</td><td>'+t.why+'</td><td class="'+(t.pts>=0?'up':'dn')+'">'+fmt(t.pts,1)+'</td>'+(rs?(rs.comp?'<td>'+(t.skip?'–':t.lots)+'</td>':'')+'<td class="'+((t.rs||0)>=0?'up':'dn')+'">'+(t.skip?'skipped':Math.round(t.rs||0).toLocaleString('en-IN'))+'</td>'+(rs.comp?'<td>'+(t.cap!=null&&!t.skip?Math.round(t.cap).toLocaleString('en-IN'):'–')+'</td>':''):'')+'</tr>'; }).join('')+'</table></div></div>';
     if(!btDirty && btOn.c && btOn.p){ var so=S.strats.find(function(x){ return x.id===$('btStrat').value; }); if(so){ var vv=rs||st, keep=so.res&&so.res.tf===tf&&so.res.days===days&&so.res.sym===sym?so.res:{}; so.res={tf:tf,sym:sym,days:days,money:!!rs,net:vv.net,pf:vv.pf,n:vv.n,win:vv.win,good:keep.good,chk:keep.chk,mo:keep.mo,at:Date.now()}; save(); try{ renderStratList(); }catch(e){} } }
-    out.innerHTML=html; Array.prototype.forEach.call(out.querySelectorAll('.hbUse'),function(b){ b.onclick=function(){ var N=+b.dataset.n, w=btWork&&btWork.id===s.id?btWork:(btWork=JSON.parse(JSON.stringify(s)));
+    // keep the Strategies page in sync: Backtest edits are saved to the strategy, and this run becomes its result line
+    (function(){ var i=S.strats.findIndex(function(x){ return x.id===s.id; }); if(i<0) return; var cur=S.strats[i];
+      if(btDirty){ var nw=JSON.parse(JSON.stringify(s)); nw.onChart=cur.onChart; nw.color=cur.color; nw.bySym=cur.bySym; S.strats[i]=cur=nw; btWork=JSON.parse(JSON.stringify(nw)); btDirty=false; try{ renderSignals(); }catch(x){} }
+      var F=EX?EX.F:null; cur.res={tf:tf,sym:sym,days:days,money:!!rs,net:F?F.net:(rs?rs.net:st.net),mo:F?F.mo:null,chk:EX?EX.B.mo:null,pf:F?F.pf:st.pf,n:F?F.n:st.n,win:F?F.win:st.win,good:EX?(EX.B.mo>0&&EX.B.pf>=1.05):undefined,at:Date.now(),src:'bt'};
+      save(); var q=$('btQState'); if(q) q.textContent='saved ✓'; })();
+    html=html.replace(' <small class="mut">(edited, not saved)</small>','');
+    out.innerHTML=html; if(SLC) SLC.refresh(); Array.prototype.forEach.call(out.querySelectorAll('.hbUse'),function(b){ b.onclick=function(){ var N=+b.dataset.n, w=btWork&&btWork.id===s.id?btWork:(btWork=JSON.parse(JSON.stringify(s)));
       w.holdBars=N; if(w.sides){ if(w.sides.long) w.sides.long.holdBars=N; if(w.sides.short) w.sides.short.holdBars=N; } btDirty=true; btQuick(); runBt(); toast('Exit after '+(N||'off')+(N?' candles':'')+' – re-testing. Tap “Save to strategy” to keep it.',3000); }; });
     if($('btMatch')) $('btMatch').onclick=function(e){ e.preventDefault(); btMatchRes(true); }; btCollapse(out); if(btAfter){ var fa=btAfter; btAfter=null; fa(); } btBarSet(st,rs,s.name+' · '+symName(sym)+' '+tf+sideTag());
     // equity chart
@@ -2459,43 +2472,60 @@ function trailDcaRows(e,ch){
 }
 
 // ---------- candle slider: drag the big green candle (target) and big red candle (stop) ----------
+// Works with every stop / target type: the candles are drawn in points, and a drag is written back in the type you use
+// (points, %, × ATR, candle buffer, R). Averages come from the last backtest of this strategy.
+var SLC=null;
 function slCandle(e,isPut,label,ch){
-  var tr=(BTLAST&&BTLAST.tr||[]).filter(function(t){ return isPut===null||t.side===(isPut?-1:1); }), avg=function(f){ var a=tr.map(f).filter(function(x){ return x>0&&isFinite(x); }); return a.length?a.reduce(function(p,q){return p+q;},0)/a.length:0; };
-  var px=avg(function(t){ return t.entry; })||(D&&D.n?D.c[D.n-1]:20000), max=Math.max(20,Math.round(px*0.004/5)*5);
-  var sl=e.sl&&e.sl.type==='pts'?+e.sl.v:Math.round(avg(function(t){ return t.risk; }))||Math.round(max*0.25);
-  var tp=e.tp&&e.tp.type==='pts'?+e.tp.v:e.tp&&e.tp.type==='none'?0:Math.round(avg(function(t){ return Math.abs(t.tgt-t.entry); }))||Math.round(max*0.4);
-  sl=Math.min(max,Math.max(1,sl)); tp=Math.min(max,Math.max(0,tp));
-  var guess=!(e.sl&&e.sl.type==='pts')||!(e.tp&&(e.tp.type==='pts'||e.tp.type==='none'));
-  var box=el('div',{class:'slc'}), trk=el('div',{class:'trk'}), H=250, mid=H/2, ppx=(H/2-12)/max;
+  var box=el('div',{class:'slc'}), trk=el('div',{class:'trk'}), H=250, mid=H/2, inf=el('div',{class:'inf'});
   var gB=el('div',{class:'bd',style:'background:#26a69a'}), gW=el('div',{class:'wk',style:'background:#26a69a'}), gK=el('div',{class:'kn',style:'background:#26a69a'});
   var rB=el('div',{class:'bd',style:'background:#ef5350'}), rW=el('div',{class:'wk',style:'background:#ef5350'}), rK=el('div',{class:'kn',style:'background:#ef5350'});
   var en=el('div',{class:'en',style:'top:'+mid+'px'},'<span>entry</span>');
-  [gW,rW,gB,rB,en,gK,rK].forEach(function(x){ trk.appendChild(x); });
-  var inf=el('div',{class:'inf'}); box.appendChild(trk); box.appendChild(inf);
-  // CALL: profit is up (green above entry). PUT: profit is down (green below entry).
-  function place(B,W,K,v,up){ var h=v*ppx; if(up){ B.style.top=(mid-h)+'px'; B.style.height=h+'px'; W.style.top=(mid-h-10)+'px'; W.style.height='10px'; K.style.top=(mid-h)+'px'; }
+  [gW,rW,gB,rB,en,gK,rK].forEach(function(x){ trk.appendChild(x); }); box.appendChild(trk); box.appendChild(inf);
+  var M={}, sl=0, tp=0, drag=null, r2=function(x,n){ var m=Math.pow(10,n); return Math.round(x*m)/m; };
+  function stats(){ var tr=(BTLAST&&BTLAST.tr||[]).filter(function(t){ return t.side===(isPut?-1:1); }), avg=function(f){ var a=tr.map(f).filter(function(x){ return x>0&&isFinite(x); }); return a.length?a.reduce(function(p,q){return p+q;},0)/a.length:0; };
+    var px=avg(function(t){ return t.entry; })||(D&&D.n?D.c[D.n-1]:20000), atr=avg(function(t){ return t.atr0; });
+    if(!atr && D && D.n){ try{ atr=indCalc(D,'ATR',{len:14}).value[D.n-1]; }catch(x){} } atr=atr||px*0.001;
+    var risk=avg(function(t){ return t.risk; });
+    return {px:px,atr:atr,risk:risk,max:Math.max(20,Math.round(px*0.004/5)*5)}; }
+  // points <-> the strategy's own units
+  function slPts(){ var t=e.sl.type, v=+e.sl.v||0; return t==='pts'?v:t==='pct'?v/100*M.px:t==='atr'?v*M.atr:Math.max(1,(M.base||M.risk||M.max*0.25)+(+e.sl.buf||0)); }
+  function tpPts(){ var t=e.tp.type, v=+e.tp.v||0; return t==='pts'?v:t==='pct'?v/100*M.px:t==='R'?v*sl:0; }
+  function setSl(p){ p=Math.max(1,p); var t=e.sl.type;
+    if(t==='pts') e.sl={type:'pts',v:Math.round(p),buf:0}; else if(t==='pct') e.sl={type:'pct',v:r2(p/M.px*100,3),buf:0}; else if(t==='atr') e.sl={type:'atr',v:r2(p/M.atr,2),buf:0};
+    else e.sl={type:t,v:0,buf:Math.max(0,Math.round(p-M.base))}; }
+  function setTp(p){ var t=e.tp.type;
+    if(p<=0){ e.tp={type:'none',v:0}; return; } if(t==='pct') e.tp={type:'pct',v:r2(p/M.px*100,3)}; else if(t==='R') e.tp={type:'R',v:r2(p/Math.max(1,sl),2)}; else e.tp={type:'pts',v:Math.round(p)}; }
+  function unitSl(){ var t=e.sl.type; return t==='pts'?'':t==='pct'?' ('+e.sl.v+'%)':t==='atr'?' ('+e.sl.v+'×ATR)':' ('+(t==='candle'?'signal candle':'pattern candles')+' + '+(+e.sl.buf||0)+' buffer)'; }
+  function unitTp(){ var t=e.tp.type; return t==='pct'?' ('+e.tp.v+'%)':t==='R'?' ('+e.tp.v+'R)':''; }
+  function place(B,W,K,v,up){ var h=Math.min(H/2-12,v*M.ppx); if(up){ B.style.top=(mid-h)+'px'; B.style.height=h+'px'; W.style.top=(mid-h-10)+'px'; W.style.height='10px'; K.style.top=(mid-h)+'px'; }
     else { B.style.top=mid+'px'; B.style.height=h+'px'; W.style.top=(mid+h)+'px'; W.style.height='10px'; K.style.top=(mid+h)+'px'; } }
-  function draw(){ place(gB,gW,gK,tp,!isPut); place(rB,rW,rK,sl,!!isPut);
-    inf.innerHTML='<div><span class="mut small">'+label+(guess?' · started from your average':'')+'</span><br><span class="up">Target</span> <b class="up">'+(tp?'+'+tp+' pts':'none')+'</b></div>'+
+  function draw(){ place(gB,gW,gK,tp,!isPut); place(rB,rW,rK,sl,!!isPut); var est=['pts'].indexOf(e.sl.type)<0||['pts','none'].indexOf(e.tp.type)<0;
+    inf.innerHTML='<div><span class="mut small">'+label+(est?' · ≈ avg points of your last backtest':'')+'</span><br><span class="up">Target</span> <b class="up">'+(tp?'+'+Math.round(tp)+' pts':'none')+'</b><span class="small mut">'+unitTp()+'</span></div>'+
       '<div class="small mut">Reward : risk <b style="color:var(--tx)">'+(tp&&sl?fmt(tp/sl,2):'–')+'</b><br>Needs over <b style="color:var(--tx)">'+(tp?fmt(100*sl/(sl+tp),0)+'%':'–')+'</b> wins to break even (before charges)</div>'+
-      '<div><span class="dn">Stop loss</span> <b class="dn">−'+sl+' pts</b><br><span class="mut small">Drag the candles · scale ±'+max+' pts</span></div>'; }
-  draw();
-  var drag=null;
-  function val(cy){ var r=trk.getBoundingClientRect(), y=cy-r.top, d=Math.round(Math.abs(mid-y)/ppx); return Math.max(0,Math.min(max,d)); }
-  function start(cy){ var r=trk.getBoundingClientRect(), y=cy-r.top, upHalf=y<mid; drag=(upHalf!==!!isPut)?'tp':'sl'; move(cy); }
-  function move(cy){ if(!drag) return; var v=val(cy); if(drag==='tp') tp=v; else sl=Math.max(1,v); guess=false; draw(); }
-  function end(){ if(!drag) return; drag=null; e.sl={type:'pts',v:sl,buf:0}; e.tp=tp?{type:'pts',v:tp}:{type:'none',v:0}; ch(); }
+      '<div><span class="dn">Stop loss</span> <b class="dn">−'+Math.round(sl)+' pts</b><span class="small mut">'+unitSl()+'</span><br><span class="mut small">'+((e.sl.type==='candle'||e.sl.type==='pattern')?'Can’t be tighter than the candle (≈'+Math.round(M.base)+' pts) – pick Fixed points for that. ':'')+'Drag the candles · scale ±'+M.max+' pts</span></div>'; }
+  function refresh(){ if(drag) return; M=stats(); M.ppx=(H/2-12)/M.max;
+    // candle-based stop: the candle part = average stop of the last run minus the buffer that run used
+    var was=BTLAST&&BTLAST.slAt&&BTLAST.slAt[isPut?'-1':'1']; M.base=Math.max(1, was&&(was.type==='candle'||was.type==='pattern')&&M.risk? M.risk-(+was.buf||0) : (M.base||M.atr));
+    sl=slPts(); tp=tpPts(); draw(); }
+  function val(cy){ var r=trk.getBoundingClientRect(); return Math.max(0,Math.min(M.max,Math.abs(mid-(cy-r.top))/M.ppx)); }
+  function start(cy){ var r=trk.getBoundingClientRect(), upHalf=(cy-r.top)<mid; drag=(upHalf!==!!isPut)?'tp':'sl'; move(cy); }
+  function move(cy){ if(!drag) return; var v=val(cy); if(drag==='tp') tp=v; else { var rR=e.tp.type==='R'?tp/Math.max(1,sl):0; sl=Math.max((e.sl.type==='candle'||e.sl.type==='pattern')?M.base:1,v); if(rR) tp=rR*sl; } draw(); }
+  function end(){ if(!drag) return; var d=drag; drag=null; if(d==='sl') setSl(sl); else setTp(tp); ch(); }
   trk.addEventListener('touchstart',function(ev){ ev.preventDefault(); start(ev.touches[0].clientY); },{passive:false});
   trk.addEventListener('touchmove',function(ev){ ev.preventDefault(); move(ev.touches[0].clientY); },{passive:false});
   trk.addEventListener('touchend',function(ev){ ev.preventDefault(); end(); },{passive:false});
   trk.addEventListener('mousedown',function(ev){ ev.preventDefault(); start(ev.clientY); var mm=function(x){ move(x.clientY); }, mu=function(){ document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); end(); }; document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu); });
-  return box; }
+  refresh();
+  // switching the type below keeps the same distance: the value is converted into the new unit
+  box.convSl=function(newType){ var p=sl; e.sl.type=newType; e.sl.buf=e.sl.buf||0; setSl(p); refresh(); };
+  box.convTp=function(newType){ var p=tp||Math.round(M.max*0.4); e.tp.type=newType; if(newType==='none'){ e.tp={type:'none',v:0}; } else setTp(p); refresh(); };
+  box.refresh=refresh; return box; }
 function btQuick(){
   var box=$('btQuick'); box.innerHTML='';
   var orig=S.strats.find(function(x){return x.id===$('btStrat').value;}); if(!orig) return;
-  if(!btWork||btWork.id!==orig.id){ btWork=JSON.parse(JSON.stringify(orig)); btDirty=false; }
+  if(!btWork||btWork.id!==orig.id){ btWork=JSON.parse(JSON.stringify(orig)); btDirty=false; if(!BTUNDO||BTUNDO.id!==orig.id) BTUNDO=JSON.parse(JSON.stringify(orig)); }
   var s=btWork; s.pat=s.pat||{}; s.sl=s.sl||{type:'pattern',buf:2}; s.tp=s.tp||{type:'R',v:2}; s.long=s.long||[]; s.short=s.short||[];
-  function ch(){ btDirty=true; var q=$('btQState'); if(q) q.textContent='edited – not saved'; clearTimeout(btTimer); btTimer=setTimeout(runBt,600); }
+  function ch(){ btDirty=true; var q=$('btQState'); if(q) q.textContent='saving…'; clearTimeout(btTimer); btTimer=setTimeout(runBt,600); }
   var d=el('details'); d.open=true; d.appendChild(el('summary',{style:'cursor:pointer;font-weight:600;margin:10px 0 6px'},'⚙ Quick edit &amp; re-test <span id="btQState" class="small" style="color:var(--warn)">'+(btDirty?'edited – not saved':'')+'</span>'));
   var r1=el('div',{class:'row'});
   r1.appendChild(field('Pattern',sel(Object.keys(PATTERNS).map(function(k){return [k,PATTERNS[k].name];}),s.pattern||'none',function(v){ s.pattern=v; ch(); btQuick(); })));
@@ -2518,15 +2548,15 @@ function btQuick(){
   if(s.pattern==='fib_pa') d.appendChild(fibRow(e,ch));
   if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('ORB minutes',num(e.pat.orbMins||15,function(v){e.pat.orbMins=v;ch();}))); d.appendChild(r2b); }
   var isPut=s.sides?btQSide==='short':(s.dir==='short'?true:s.dir==='long'?false:null);
-  d.appendChild(slCandle(e,isPut===true,s.sides?(btQSide==='short'?'PUT':'CALL'):(s.dir==='short'?'PUT':s.dir==='long'?'CALL':'CALL & PUT'),function(){ ch(); btQuick(); }));
+  d.appendChild(SLC=slCandle(e,isPut===true,s.sides?(btQSide==='short'?'PUT':'CALL'):(s.dir==='short'?'PUT':s.dir==='long'?'CALL':'CALL & PUT'),function(){ ch(); btQuick(); }));
   var r3=el('div',{class:'row',style:'margin-top:6px'});
-  var fv3=field('SL value (pts / % / ×ATR)',num(e.sl.v||'',function(v){e.sl.v=v;ch();})), fb3=field('SL buffer beyond candles (pts)',num(e.sl.buf||0,function(v){e.sl.buf=v;ch();})), tv4;
-  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],e.sl.type||'pattern',function(v){e.sl.type=v; slVis(e,fv3,fb3,tv4); ch();})));
+  var fv3=field('SL value (pts / % / ×ATR)',num(e.sl.v||'',function(v){e.sl.v=v;ch();if(SLC)SLC.refresh();})), fb3=field('SL buffer beyond candles (pts)',num(e.sl.buf||0,function(v){e.sl.buf=v;ch();if(SLC)SLC.refresh();})), tv4;
+  r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],e.sl.type||'pattern',function(v){ if(SLC) SLC.convSl(v); else e.sl.type=v; ch(); btQuick(); })));
   r3.appendChild(fv3); r3.appendChild(fb3);
   d.appendChild(r3);
   var r4=el('div',{class:'row',style:'margin-top:6px'});
-  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],e.tp.type||'R',function(v){e.tp.type=v; slVis(e,fv3,fb3,tv4); ch();})));
-  tv4=field('Target value',num(e.tp.v,function(v){e.tp.v=v;ch();})); r4.appendChild(tv4); slVis(e,fv3,fb3,tv4);
+  r4.appendChild(field('Target',sel([['R','R multiple'],['pts','Fixed points'],['pct','Fixed %'],['none','None']],e.tp.type||'R',function(v){ if(SLC) SLC.convTp(v); else e.tp.type=v; ch(); btQuick(); })));
+  tv4=field('Target value',num(e.tp.v,function(v){e.tp.v=v;ch();if(SLC)SLC.refresh();})); r4.appendChild(tv4); slVis(e,fv3,fb3,tv4);
   r4.appendChild(field('Exit after N candles',num(e.holdBars||0,function(v){e.holdBars=v;ch();},1)));
   r4.appendChild(field('Max trades/day',num(e.maxTrades||0,function(v){e.maxTrades=v;ch();},1)));
   r4.appendChild(field('Day loss limit pts',num(e.maxLossDay||0,function(v){e.maxLossDay=v;ch();})));
@@ -2541,7 +2571,7 @@ function btQuick(){
   [lb,sb].forEach(function(b){ b.addEventListener('click',function(e){ if(e.target.tagName==='BUTTON' && !/Edit|Custom/.test(e.target.textContent)) setTimeout(ch,50); }); });
   d.appendChild(dc);
   var r6=el('div',{class:'row',style:'margin-top:10px'});
-  var bs=el('button',{class:'btn sm pri'},'💾 Save to strategy'); bs.onclick=function(){ var i=S.strats.findIndex(function(x){return x.id===s.id;}); if(i>=0){ var keep=S.strats[i].onChart; S.strats[i]=JSON.parse(JSON.stringify(s)); S.strats[i].onChart=keep; } btDirty=false; save(); renderSignals(); btQuick(); toast('Saved “'+s.name+'”',2000); };
+  var bs=el('button',{class:'btn sm'},'↶ Undo my Backtest changes'); bs.onclick=function(){ if(!BTUNDO||BTUNDO.id!==s.id) return toast('Nothing to undo',1500); var i=S.strats.findIndex(function(x){return x.id===s.id;}); if(i>=0){ var keep=S.strats[i]; var u=JSON.parse(JSON.stringify(BTUNDO)); u.onChart=keep.onChart; u.color=keep.color; u.bySym=keep.bySym; S.strats[i]=u; } btWork=null; btDirty=false; save(); renderSignals(); btQuick(); runBt(); toast('Back to the settings you had when you opened it',2500); };
   var bn=el('button',{class:'btn sm'},'Save as new'); bn.onclick=function(){ var c=JSON.parse(JSON.stringify(s)); c.id=uid(); c.name=s.name+' (v'+(S.strats.length+1)+')'; c.onChart=false; S.strats.push(c); save(); btWork=null; btDirty=false; fillBtStrat(); $('btStrat').value=c.id; btQuick(); toast('Saved as “'+c.name+'”',2500); };
   var br=el('button',{class:'btn sm'},'↺ Reset'); br.onclick=function(){ btWork=null; btDirty=false; btQuick(); runBt(); };
 
@@ -2553,7 +2583,7 @@ function btQuick(){
     var go=function(){ renderSignals(); rpEnter(); toast('“'+c.name+'” is on the chart. Tap a candle to start the replay, then ▶ — its CALL/PUT signals and results appear as candles play.',7000); };
     if(need){ var pr=loadAll(); if(pr&&pr.then) pr.then(go); else go(); } else go();
   };
-  r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
+  r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(ba); d.appendChild(r6);
   var r7=el('div',{class:'row',style:'margin-top:8px'});
   var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✨ Tune this strategy → opens the Tune panel'); bo.onclick=function(){ var id=$('btStrat').value, sy=$('btSym').value; showView('strats'); tuneUI(); $('tuneWhich').value=id; $('tuneSym').value=sy; $('tuneCard').scrollIntoView({behavior:'smooth'}); $('tuneCard').style.boxShadow='0 0 0 2px var(--acc)'; setTimeout(function(){ $('tuneCard').style.boxShadow=''; },2500); }; r7.appendChild(bo);
   d.appendChild(r7);
