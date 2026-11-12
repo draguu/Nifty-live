@@ -310,6 +310,8 @@ body.desk.pwide{--pw:720px}
         <label class="lbl" style="flex:0 0 auto">Timeframe<select id="tuneTf"><option value="1m">1m</option><option value="5m">5m (faster)</option><option value="1m,5m">1m + 5m, keep the better</option></select></label>
         <label class="lbl" style="flex:0 0 auto">History<select id="tuneYrs"><option value="5">5 years</option><option value="2">2 years</option><option value="1">1 year</option></select></label>
         <label class="lbl" style="flex:1 1 150px">Goal<select id="tuneObj"><option value="win60">Quick 60%+ win (exit within 5 min)</option><option value="steady">Steady profit</option><option value="winpct">Highest win % (keep profit)</option><option value="net">Most profit</option></select></label>
+        <label class="lbl" style="flex:1 1 120px">Trades<select id="tuneSide"><option value="as">As the strategy is set</option><option value="long">CALL only</option><option value="short">PUT only</option><option value="both">CALL + PUT</option></select></label>
+        <label class="lbl" style="flex:1 1 120px">Exit after N candles<select id="tuneHold"><option value="auto">Let tuning choose</option><option value="0">Off (no time exit)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="8">8</option><option value="10">10</option><option value="15">15</option><option value="20">20</option></select></label>
         <label class="lbl" id="tuneMinTL" style="flex:0 0 auto">Min trades / month<input id="tuneMinT" type="number" step="1" value="20" style="width:70px"></label>
       </div>
       <button class="btn pri" id="tuneAll" style="width:100%;margin-top:8px">✨ Start tuning</button>
@@ -1659,7 +1661,7 @@ function Climber(P,ev,score,start,passes,deep,noFloor){
   o.bestWin=function(){ return o.bestS>-1e14?o.bestR.A.win:null; };
   return o;
 }
-function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done){
+function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done,opt){ opt=opt||{};
   var money=cfg.inst!=='pts', lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
   var cut=btCut(Dx,days), t0=Dx.t[cut.i], t1=Dx.t[lc], split=Math.floor(t0+(t1-t0)*0.7), MD=30.44*86400, mA=Math.max(1,(split-t0)/MD), mB=Math.max(1,(t1-split)/MD);
   function part(T,mons){ var r={n:T.length,w:0,net:0,gp:0,gl:0}; T.forEach(function(t){ var v=money?t.rs:t.pts; r.net+=v; if(v>0){ r.w++; r.gp+=v; } else r.gl-=v; });
@@ -1671,8 +1673,10 @@ function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done){
   function score(r){ return optScore(r.A,mA,obj); }
   var sides=dirSides(base), res={}, si=0, runs0=0, P=optSpace(base,tf), C, q5=obj==='win60';
   if(q5){ var mx=Math.max(1,Math.floor(5/TF[tf].min)); P.forEach(function(p){ if(p.n==='Exit after N candles') p.vals=[1,2,3,4,5].filter(function(v){ return v<=mx; }); }); } // options scalps: out within 5 minutes
+  if(opt.hold!=null) P=P.filter(function(p){ return p.n!=='Exit after N candles'; }); // fixed by the user
   function startSide(){ var st=JSON.parse(JSON.stringify(sideS(base,sides[si]==='long'?1:-1))); delete st.sides; st.dir=sides[si];
     if(q5){ var mx2=Math.max(1,Math.floor(5/TF[tf].min)); if(!st.holdBars||st.holdBars>mx2) st.holdBars=Math.min(2,mx2); }
+    if(opt.hold!=null) st.holdBars=opt.hold;
     C=Climber(P,ev,score,st,passes,obj==='winpct'||q5,q5); }
   startSide();
   (function step(){
@@ -1704,6 +1708,7 @@ function tuneAll(){
   var sym=$('tuneSym').value, which=$('tuneWhich').value, obj=$('tuneObj').value, build=which==='build';
   S.tuneMinT=Math.max(1,+$('tuneMinT').value||20);
   if(profLoad(sym)){ renderStratList(); profLabel(); }
+  var tSide=$('tuneSide').value, tHold=$('tuneHold').value==='auto'?null:+$('tuneHold').value;
   var tfs=$('tuneTf').value.split(','), days=Math.round(365.25*(+$('tuneYrs').value||5)), cost=+$('btCost').value||0, cfg=btCfg(), out=$('tuneOut'), k=0, money=cfg.inst!=='pts'; cfg.comp=false;
   if(isStock(sym)&&cfg.inst!=='pts'){ cfg.inst='eq'; cfg.lev=+S.bt.lev||5; } else if(cfg.inst==='eq') cfg.inst='opt';
   var list;
@@ -1740,12 +1745,13 @@ function tuneAll(){
         k++; return setTimeout(one,0); }
       var tf=tfs[ti++];
       getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+symName(sym)+' '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){
-        tuneCore(orig,Dx,tf,days,cost,cfg,obj,tf==='1m'?1:2,function(runs,si,bw){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'+(bw!=null?' · best win '+fmt(bw,1)+'%':'')+' · '+m()+(build&&found.some(function(f){return f.ok;})?' · ✅ one 60% found so far':''); },function(R){
+        var src=orig; if(tSide!=='as'){ src=JSON.parse(JSON.stringify(orig)); src.dir=tSide; } // CALL only / PUT only / both, as picked in the Tune card
+        tuneCore(src,Dx,tf,days,cost,cfg,obj,tf==='1m'?1:2,function(runs,si,bw){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'+(bw!=null?' · best win '+fmt(bw,1)+'%':'')+' · '+m()+(build&&found.some(function(f){return f.ok;})?' · ✅ one 60% found so far':''); },function(R){
           if(!R) return finish('Stopped.');
           var g=function(x){ return x && x.held && x.r.B.net>0 && !(obj==='winpct' && x.before && x.before.F.perMon>0 && x.r.F.perMon<0.8*x.before.F.perMon); }, gL=g(R.res.long), gS=g(R.res.short), nw=null;
-          if(gL||gS){ nw=JSON.parse(JSON.stringify(orig)); nw.sides={long:pick(R.res.long?R.res.long.s:sideS(orig,1)),short:pick(R.res.short?R.res.short.s:sideS(orig,-1))}; nw.dir=gL&&gS?'both':gL?'long':'short'; }
-          var st=R.ev(nw||orig); cands.push({tf:tf,good:!!nw&&st.B.net>0,nw:nw,st:st}); setTimeout(tfNext,0);
-        });
+          if(gL||gS){ nw=JSON.parse(JSON.stringify(src)); nw.sides={long:pick(R.res.long?R.res.long.s:sideS(src,1)),short:pick(R.res.short?R.res.short.s:sideS(src,-1))}; nw.dir=gL&&gS?'both':gL?'long':'short'; }
+          var st=R.ev(nw||src); cands.push({tf:tf,good:!!nw&&st.B.net>0,nw:nw,st:st}); setTimeout(tfNext,0);
+        },{hold:tHold});
       }).catch(function(e){ out.textContent='Data error ('+tf+'): '+e.message; ti=tfs.length; cands.length?tfNext():finish('Stopped – could not load data.'); });
     }
     tfNext();
