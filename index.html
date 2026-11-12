@@ -281,13 +281,20 @@ details>summary{cursor:pointer}
       <h3 class="grow" style="margin:0">My strategies</h3>
       <button class="btn pri" id="newStrat">+ New</button>
     </div>
-    <div class="card" style="padding:8px 10px">
-      <div class="row" style="align-items:flex-end">
-        <label class="lbl" style="flex:0 0 auto">Timeframe<select id="tuneTf"><option value="5m">5m (fast)</option><option value="1m">1m (slow)</option><option value="1m,5m">1m + 5m, keep the better</option></select></label>
-        <label class="lbl" style="flex:1 1 130px">Goal<select id="tuneObj"><option value="steady">Steady profit</option><option value="winpct">Highest win %</option><option value="net">Most profit</option></select></label>
-        <button class="btn pri grow" id="tuneAll">✨ Test &amp; tune all · 5 years</button>
+    <div class="card" id="tuneCard" style="padding:8px 10px">
+      <h4 style="margin:0 0 6px">✨ Tune strategies <span class="small mut">– the only place to find best settings</span></h4>
+      <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+        <label class="lbl" style="flex:1 1 140px">What<select id="tuneWhich"></select></label>
+        <label class="lbl" style="flex:1 1 110px">Symbol<select id="tuneSym"></select></label>
       </div>
-      <div id="tuneOut" class="small mut" style="margin-top:8px">Runs “find best settings” on every strategy, applies what works and shows the profit on each line.</div>
+      <div class="row" style="align-items:flex-end;flex-wrap:wrap;margin-top:6px">
+        <label class="lbl" style="flex:0 0 auto">Timeframe<select id="tuneTf"><option value="1m">1m</option><option value="5m">5m (faster)</option><option value="1m,5m">1m + 5m, keep the better</option></select></label>
+        <label class="lbl" style="flex:0 0 auto">History<select id="tuneYrs"><option value="5">5 years</option><option value="2">2 years</option><option value="1">1 year</option></select></label>
+        <label class="lbl" style="flex:1 1 150px">Goal<select id="tuneObj"><option value="win60">Quick 60%+ win (exit within 5 min)</option><option value="steady">Steady profit</option><option value="winpct">Highest win % (keep profit)</option><option value="net">Most profit</option></select></label>
+        <label class="lbl" id="tuneMinTL" style="flex:0 0 auto">Min trades / month<input id="tuneMinT" type="number" step="1" value="20" style="width:70px"></label>
+      </div>
+      <button class="btn pri" id="tuneAll" style="width:100%;margin-top:8px">✨ Start tuning</button>
+      <div id="tuneOut" class="small mut" style="margin-top:8px"></div>
     </div>
     <p class="hint" id="profLbl" style="margin:0 0 6px"></p>
     <div id="stratList"></div>
@@ -1577,20 +1584,23 @@ function resDetail(s){ var r=s.res; if(!r) return '';
 // ---- batch optimizer (same search as “Find & apply best settings”) ----
 var TA={run:false,stop:false};
 // optimizer helpers: score that can climb out of "too few trades", and a pool of the best learn-period settings
-function optScore(a,mA,obj){ var minN=obj==='winpct'?Math.max(20,mA*2):Math.max(12,mA*0.5); // win % needs more trades, or a lucky few look like 100%
+function optScore(a,mA,obj){
+  if(obj==='win60'){ var mt=+(S.tuneMinT||20), tpm=a.n/mA; // quick scalps: enough trades, then 60%+ win, then most profit
+    if(tpm<mt) return -3e15+tpm*1e9+a.win*1e3; if(a.net<=0) return -2e15+a.pf*1e9+a.win*1e3; if(a.win<60) return -1.5e15+a.win*1e9+a.perMon; return 1e12+a.perMon; }
+  var minN=obj==='winpct'?Math.max(20,mA*2):Math.max(12,mA*0.5); // win % needs more trades, or a lucky few look like 100%
   if(a.n<minN) return -2e15+a.n*1e9+a.net; if(a.net<=0) return -1e15+a.net;
   return obj==='winpct'? a.win*1e6+a.perMon : obj==='wins'? a.winsMon*1e6+a.perMon : obj==='green'? (a.green||0)*1e6+a.perMon : obj==='steady'? a.minChunk : a.perMon; }
 function poolAdd(pool,c,r,sc){ if(sc<=-1e14) return; var k=JSON.stringify([c.pat,c.sl,c.tp,c.start,c.end,c.maxTrades,c.stopAfterWin,c.holdBars]);
   for(var i=0;i<pool.length;i++) if(pool[i].k===k) return; pool.push({k:k,s:c,r:r,sc:sc}); pool.sort(function(a,b){ return b.sc-a.sc; }); if(pool.length>40) pool.length=40; }
-function poolPick(pool,cur,curR,curS){ // best learn-score setting that also made money on the unseen check period
-  for(var i=0;i<pool.length;i++){ var x=pool[i]; if(x.r.B.net>0 && x.r.B.n>=3) return {s:x.s,r:x.r,ok:true,held:true,rank:i+1}; }
+function poolPick(pool,cur,curR,curS,minWin){ // best learn-score setting that also made money on the unseen check period
+  for(var i=0;i<pool.length;i++){ var x=pool[i]; if(x.r.B.net>0 && x.r.B.n>=3 && x.r.B.win>=(minWin||0)) return {s:x.s,r:x.r,ok:true,held:true,rank:i+1}; }
   return {s:pool.length?pool[0].s:cur,r:pool.length?pool[0].r:curR,ok:curS>-1e14||pool.length>0,held:false}; }
 function dirSides(base){ var d=base.dir||'both'; return d==='long'?['long']:d==='short'?['short']:['long','short']; }
 // hill-climber: changes one setting at a time and keeps any improvement. Deep mode (highest win %) keeps climbing until a full
 // round brings no gain, then restarts from shuffled versions of the best found, until 3 restarts in a row can't beat it.
-function Climber(P,ev,score,start,passes,deep){
+function Climber(P,ev,score,start,passes,deep,noFloor){
   var cl=function(x){ return JSON.parse(JSON.stringify(x)); }, o={runs:1,pool:[],pass:0,pi:0,vi:0,imp:false,restarts:0,noGain:0,deep:deep};
-  o.startR=ev(start); var floor=(deep&&o.startR.A.perMon>0)?0.8*o.startR.A.perMon:0, sc0=score;
+  o.startR=ev(start); var floor=(deep&&!noFloor&&o.startR.A.perMon>0)?0.8*o.startR.A.perMon:0, sc0=score;
   // highest win % may not cost profit: settings earning under 80% of the current ones' monthly profit are rejected
   score=function(r){ var v=sc0(r); return (floor && v>-1e14 && r.A.perMon<floor)? -1e15+r.A.perMon : v; };
   o.cur=start; o.curR=o.startR; o.curS=score(o.curR); poolAdd(o.pool,o.cur,o.curR,o.curS); o.best=o.cur; o.bestR=o.curR; o.bestS=o.curS;
@@ -1611,50 +1621,86 @@ function tuneCore(base,Dx,tf,days,cost,cfg,obj,passes,tick,done){
   var money=cfg.inst!=='pts', lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
   var cut=btCut(Dx,days), t0=Dx.t[cut.i], t1=Dx.t[lc], split=Math.floor(t0+(t1-t0)*0.7), MD=30.44*86400, mA=Math.max(1,(split-t0)/MD), mB=Math.max(1,(t1-split)/MD);
   function part(T,mons){ var r={n:T.length,w:0,net:0,gp:0,gl:0}; T.forEach(function(t){ var v=money?t.rs:t.pts; r.net+=v; if(v>0){ r.w++; r.gp+=v; } else r.gl-=v; });
-    r.perMon=r.net/mons; r.winsMon=r.w/mons; r.win=r.n?100*r.w/r.n:0; r.pf=r.gl>0?r.gp/r.gl:(r.gp>0?99:0); return r; }
+    r.perMon=r.net/mons; r.winsMon=r.w/mons; r.tpm=r.n/mons; r.win=r.n?100*r.w/r.n:0; r.pf=r.gl>0?r.gp/r.gl:(r.gp>0?99:0); return r; }
   function ev(s){ var tr=backtest(Dx,s,TF[tf].min,cost,lc).filter(function(t){ return t.t>=t0 && t.why!=='Open'; }); if(money) rupeeTrades(tr,cfg);
     var A=part(tr.filter(function(t){ return t.t<split; }),mA), L3=(split-t0)/3, ch=[0,0,0];
     tr.forEach(function(t){ if(t.t<split){ var q=Math.min(2,Math.floor((t.t-t0)/L3)); ch[q]+=money?t.rs:t.pts; } }); A.minChunk=Math.min(ch[0],ch[1],ch[2])/(L3/MD);
     return {A:A,B:part(tr.filter(function(t){ return t.t>=split; }),mB),F:part(tr,mA+mB)}; }
   function score(r){ return optScore(r.A,mA,obj); }
-  var sides=dirSides(base), res={}, si=0, runs0=0, P=optSpace(base,tf), C;
-  function startSide(){ var st=JSON.parse(JSON.stringify(sideS(base,sides[si]==='long'?1:-1))); delete st.sides; st.dir=sides[si]; C=Climber(P,ev,score,st,passes,obj==='winpct'); }
+  var sides=dirSides(base), res={}, si=0, runs0=0, P=optSpace(base,tf), C, q5=obj==='win60';
+  if(q5){ var mx=Math.max(1,Math.floor(5/TF[tf].min)); P.forEach(function(p){ if(p.n==='Exit after N candles') p.vals=[1,2,3,4,5].filter(function(v){ return v<=mx; }); }); } // options scalps: out within 5 minutes
+  function startSide(){ var st=JSON.parse(JSON.stringify(sideS(base,sides[si]==='long'?1:-1))); delete st.sides; st.dir=sides[si];
+    if(q5){ var mx2=Math.max(1,Math.floor(5/TF[tf].min)); if(!st.holdBars||st.holdBars>mx2) st.holdBars=Math.min(2,mx2); }
+    C=Climber(P,ev,score,st,passes,obj==='winpct'||q5,q5); }
   startSide();
   (function step(){
     var tEnd=performance.now()+150;
     while(performance.now()<tEnd){
       if(TA.stop) return done(null);
-      if(C.step()){ res[sides[si]]=poolPick(C.pool,C.cur,C.curR,C.curS); res[sides[si]].before=C.startR; runs0+=C.runs; si++; if(si>=sides.length) return done({res:res,runs:runs0,ev:ev}); startSide(); }
+      if(C.step()){ res[sides[si]]=poolPick(C.pool,C.cur,C.curR,C.curS,q5?57:0); res[sides[si]].before=C.startR; runs0+=C.runs; si++; if(si>=sides.length) return done({res:res,runs:runs0,ev:ev}); startSide(); }
     }
     tick(runs0+C.runs,sides[si]==='short'?1:0,C.bestWin()); setTimeout(step,0);
   })();
 }
+var WL=null; function wakeOn(){ try{ if(navigator.wakeLock) navigator.wakeLock.request('screen').then(function(w){ WL=w; }).catch(function(){}); }catch(e){} }
+function wakeOff(){ try{ if(WL) WL.release(); }catch(e){} WL=null; }
+// templates tried when building a new quick 60% strategy
+var QUICK_TPL=['Keltner breakout','Supertrend flip','EMA 9/21 cross + VWAP','RSI(3) dip in trend','Bollinger band bounce','ORB 15 min breakout','Previous-day high / low breakout','Engulfing + Supertrend','Stochastic cross from extremes','VWAP reclaim in trend (EMA 200)'];
+function tuneUI(){
+  var w=$('tuneWhich'), cur=w.value; w.innerHTML='';
+  w.appendChild(el('option',{value:'build'},'🧪 Build a NEW strategy (tries 10 ideas)')); w.appendChild(el('option',{value:'all'},'All my strategies'));
+  S.strats.forEach(function(x){ w.appendChild(el('option',{value:x.id},x.name)); });
+  w.value=cur&&Array.prototype.some.call(w.options,function(o){ return o.value===cur; })?cur:'build';
+  if(!$('tuneSym').options.length){ fillSym($('tuneSym'),S.sym); }
+  $('tuneMinT').value=S.tuneMinT||20; $('tuneMinTL').style.display=$('tuneObj').value==='win60'?'':'none';
+  $('tuneAll').innerHTML=TA.run?'■ Stop':'✨ Start tuning';
+}
+$('tuneObj').onchange=function(){ $('tuneMinTL').style.display=this.value==='win60'?'':'none'; };
+$('tuneMinT').onchange=function(){ S.tuneMinT=Math.max(1,+this.value||20); save(); };
 function tuneAll(){
   if(TA.run){ TA.stop=true; return; }
-  if(profLoad(S.sym)){ renderStratList(); profLabel(); }
-  var tfs=$('tuneTf').value.split(','), sym=S.sym, days=1825, cost=+$('btCost').value||0, cfg=btCfg(), out=$('tuneOut'), list=S.strats.slice(), k=0, money=cfg.inst!=='pts'; cfg.comp=false;
-  TA.run=true; TA.stop=false; $('tuneAll').textContent='■ Stop'; var okN=0, t00=Date.now();
+  var sym=$('tuneSym').value, which=$('tuneWhich').value, obj=$('tuneObj').value, build=which==='build';
+  S.tuneMinT=Math.max(1,+$('tuneMinT').value||20);
+  if(profLoad(sym)){ renderStratList(); profLabel(); }
+  var tfs=$('tuneTf').value.split(','), days=Math.round(365.25*(+$('tuneYrs').value||5)), cost=+$('btCost').value||0, cfg=btCfg(), out=$('tuneOut'), k=0, money=cfg.inst!=='pts'; cfg.comp=false;
+  if(isStock(sym)&&cfg.inst!=='pts'){ cfg.inst='eq'; cfg.lev=+S.bt.lev||5; } else if(cfg.inst==='eq') cfg.inst='opt';
+  var list;
+  if(build){ var lib=stratLibrary(); list=QUICK_TPL.map(function(n){ var x=lib.find(function(y){ return y.name===n; }); if(!x) return null; x=JSON.parse(JSON.stringify(x)); x.id=uid(); x.dir='both'; delete x.sides; return x; }).filter(Boolean); }
+  else list=which==='all'?S.strats.slice():S.strats.filter(function(x){ return x.id===which; });
+  TA.run=true; TA.stop=false; $('tuneAll').textContent='■ Stop'; wakeOn(); var okN=0, t00=Date.now(), found=[];
   var pick=function(x){ return JSON.parse(JSON.stringify({pat:x.pat||{},sl:x.sl,tp:x.tp,start:x.start,end:x.end,sq:x.sq,maxTrades:x.maxTrades||0,maxLossDay:x.maxLossDay||0,stopAfterWin:!!x.stopAfterWin,holdBars:x.holdBars||0})); };
-  function finish(msg){ TA.run=false; $('tuneAll').innerHTML='✨ Test &amp; tune all · 5 years';
-    S.strats.sort(function(a,b){ var ga=a.res?(a.res.good?2:1):0, gb=b.res?(b.res.good?2:1):0; if(ga!==gb) return gb-ga; return ((b.res&&(b.res.chk!=null?b.res.chk:b.res.net))||0)-((a.res&&(a.res.chk!=null?a.res.chk:a.res.net))||0); });
-    save(); renderStratList(); try{ renderSignals(); }catch(e){}
-    out.innerHTML=msg+' '+okN+' of '+k+' tested strategies held up on unseen data ('+symName(sym)+', '+Math.round((Date.now()-t00)/60000)+' min). Best are at the top.'; }
+  var m=function(x){ return Math.round((Date.now()-t00)/60000)+' min'; };
+  function finish(msg){ TA.run=false; wakeOff(); $('tuneAll').innerHTML='✨ Start tuning';
+    if(build){
+      found.sort(function(a,b){ return (b.ok-a.ok)||(b.st.B.win>=60)-(a.st.B.win>=60)||b.st.F.perMon-a.st.F.perMon; });
+      var top=found.slice(0,5).map(function(f){ var F=f.st.F,B=f.st.B; return '<tr><td>'+f.name+' <span class="mut">'+f.tf+'</span></td><td>'+fmt(F.win,0)+'%</td><td>'+fmt(B.win,0)+'%</td><td>'+fmt(F.tpm,0)+'</td><td class="'+(F.perMon>=0?'up':'dn')+'">'+fmtL(F.perMon,money)+'</td></tr>'; }).join('');
+      var best=found.find(function(f){ return f.ok; });
+      if(best){ var nw=best.nw; nw.name='Quick 60% · '+symName(sym)+' '+best.tf+' · '+best.name; nw.lib=false; nw.onChart=false; nw.color=null; S.strats.unshift(nw); stratColor(nw);
+        var F=best.st.F; nw.res={tf:best.tf,sym:sym,days:days,money:money,net:F.net,mo:F.perMon,chk:best.st.B.perMon,pf:F.pf,n:F.n,win:F.win,good:true,at:Date.now()};
+        msg+=' ✅ Added <b>'+nw.name+'</b>: '+fmt(F.win,0)+'% win overall, '+fmt(best.st.B.win,0)+'% on the unseen last 30%, ~'+fmt(F.tpm,0)+' trades a month, every trade out within 5 min.'; }
+      else msg+=' ❌ None of the 10 ideas reached 60% win with profit and '+S.tuneMinT+'+ trades a month on unseen data. Closest ones below – try fewer trades a month, or 5m.';
+      if(top) msg+='<div style="overflow:auto;margin-top:6px"><table><tr><th>Idea</th><th>Win% all</th><th>Win% unseen</th><th>Trades/mo</th><th>₹/mo</th></tr>'+top+'</table></div>';
+    }
+    save(); renderStratList(); tuneUI(); try{ renderSignals(); }catch(e){}
+    out.innerHTML=msg+(build?'':' '+okN+' of '+k+' strategies held up on unseen data.')+' ('+symName(sym)+', '+m()+')'; }
   function one(){
     if(TA.stop) return finish('Stopped.'); if(k>=list.length) return finish('Done.');
     var orig=list[k], cands=[], ti=0;
     function tfNext(){
       if(TA.stop) return finish('Stopped.');
-      if(ti>=tfs.length){ // choose
+      if(ti>=tfs.length){
         var best=null; cands.forEach(function(c){ if(c.good && (!best||c.st.B.perMon>best.st.B.perMon)) best=c; });
-        var use=best||cands[0]; if(use){ var ix=S.strats.indexOf(orig), tgt=orig;
+        var use=best||cands[0];
+        if(build){ cands.forEach(function(c){ var x=c.nw||JSON.parse(JSON.stringify(orig)); var ok=!!c.good && c.st.F.win>=60 && c.st.B.win>=57 && c.st.F.tpm>=S.tuneMinT*0.8 && c.st.F.net>0; found.push({name:orig.name,tf:c.tf,st:c.st,nw:x,ok:ok?1:0}); }); }
+        else if(use){ var ix=S.strats.indexOf(orig), tgt=orig;
           if(best && ix>=0){ best.nw.onChart=orig.onChart; S.strats[ix]=best.nw; tgt=best.nw; okN++; }
           var f=use.st.F; tgt.res={tf:use.tf,sym:sym,days:days,money:money,net:f.net,mo:f.perMon,chk:use.st.B.perMon,pf:f.pf,n:f.n,win:f.win,good:!!best,at:Date.now()}; save(); renderStratList(); }
         k++; return setTimeout(one,0); }
       var tf=tfs[ti++];
-      getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){
-        tuneCore(orig,Dx,tf,days,cost,cfg,$('tuneObj').value,tf==='1m'?1:2,function(runs,si,bw){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'+(bw!=null?' · best win so far '+fmt(bw,1)+'%':''); },function(R){
+      getBtData(sym,tf,days,function(d,n){ out.textContent='Getting '+symName(sym)+' '+tf+' history '+d+' / '+n+'…'; }).then(function(Dx){
+        tuneCore(orig,Dx,tf,days,cost,cfg,obj,tf==='1m'?1:2,function(runs,si,bw){ out.textContent=(k+1)+' / '+list.length+' · '+orig.name+' · '+tf+' · '+(si?'PUT':'CALL')+' · '+runs+' settings tried'+(bw!=null?' · best win '+fmt(bw,1)+'%':'')+' · '+m()+(build&&found.some(function(f){return f.ok;})?' · ✅ one 60% found so far':''); },function(R){
           if(!R) return finish('Stopped.');
-          var g=function(x){ return x && x.held && x.r.B.net>0 && !($('tuneObj').value==='winpct' && x.before && x.before.F.perMon>0 && x.r.F.perMon<0.8*x.before.F.perMon); }, gL=g(R.res.long), gS=g(R.res.short), nw=null;
+          var g=function(x){ return x && x.held && x.r.B.net>0 && !(obj==='winpct' && x.before && x.before.F.perMon>0 && x.r.F.perMon<0.8*x.before.F.perMon); }, gL=g(R.res.long), gS=g(R.res.short), nw=null;
           if(gL||gS){ nw=JSON.parse(JSON.stringify(orig)); nw.sides={long:pick(R.res.long?R.res.long.s:sideS(orig,1)),short:pick(R.res.short?R.res.short.s:sideS(orig,-1))}; nw.dir=gL&&gS?'both':gL?'long':'short'; }
           var st=R.ev(nw||orig); cands.push({tf:tf,good:!!nw&&st.B.net>0,nw:nw,st:st}); setTimeout(tfNext,0);
         });
@@ -1683,7 +1729,7 @@ function renderStratList(){
     var cp=el('input',{type:'color',value:stratColor(s),title:'Colour on chart',style:'width:36px;height:30px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none'}); cp.onchange=function(){ s.color=cp.value; save(); renderStratList(); renderSignals(); }; acts.appendChild(cp);
     det.appendChild(acts); c.appendChild(det); box.appendChild(c);
   });
-  fillBtStrat();
+  fillBtStrat(); try{ tuneUI(); }catch(e){}
 }
 $('tuneAll').onclick=tuneAll;
 $('newStrat').onclick=function(){ editStrategy({id:uid(),name:'My strategy '+(S.strats.length+1),pattern:'opcr',pat:{gapPct:10,rMin:1,rMax:1.3,minBodyPct:0.02},dir:'both',trigger:'first',long:[],short:[],sl:{type:'pattern',buf:2},tp:{type:'R',v:1.5},start:'09:20',end:'15:00',sq:'15:15',maxTrades:0,stopAfterWin:false,onChart:false},true); };
@@ -2216,10 +2262,8 @@ function btQuick(){
     if(need){ var pr=loadAll(); if(pr&&pr.then) pr.then(go); else go(); } else go();
   };
   r6.appendChild(ba); r6.appendChild(bs); r6.appendChild(bn); r6.appendChild(br); d.appendChild(r6);
-  var r7=el('div',{class:'row',style:'margin-top:8px;align-items:flex-end'});
-  var ob=sel([['steady','Steady – best worst-stretch profit'],['winpct','Highest win % (still profitable)'],['net','Most ₹ profit per month'],['wins','Most winning trades per month'],['green','Most profitable months (%)']],S.optObj||'steady',function(v){ S.optObj=v; save(); });
-  r7.appendChild(field('Find best settings for',ob));
-  var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✨ Find & apply best CALL + PUT settings'); bo.onclick=btOptimize; r7.appendChild(bo);
+  var r7=el('div',{class:'row',style:'margin-top:8px'});
+  var bo=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✨ Tune this strategy → opens the Tune panel'); bo.onclick=function(){ var id=$('btStrat').value, sy=$('btSym').value; showView('strats'); tuneUI(); $('tuneWhich').value=id; $('tuneSym').value=sy; $('tuneCard').scrollIntoView({behavior:'smooth'}); $('tuneCard').style.boxShadow='0 0 0 2px var(--acc)'; setTimeout(function(){ $('tuneCard').style.boxShadow=''; },2500); }; r7.appendChild(bo);
   d.appendChild(r7);
   d.appendChild(el('p',{class:'hint'},'Changes re-run the backtest automatically. They only affect this test until you save.'));
   box.appendChild(d);
