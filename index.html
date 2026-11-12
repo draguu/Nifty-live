@@ -223,6 +223,16 @@ body.desk.pwide{--pw:720px}
 #veBar{position:absolute;left:8px;right:72px;top:6px;z-index:9;background:rgba(22,26,33,.94);border:1px solid var(--acc);border-radius:10px;padding:6px 8px;font-size:12px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
 #veInfo{color:var(--mut);margin-top:3px;line-height:1.4}
 body.ve #chart,body.ve #chart *{touch-action:none!important}
+
+.slc{display:flex;gap:14px;align-items:stretch;margin-top:8px;background:var(--bg3);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;user-select:none}
+.slc .trk{position:relative;width:96px;height:250px;flex:0 0 96px;touch-action:none;cursor:ns-resize;background:repeating-linear-gradient(0deg,transparent 0 24px,rgba(120,140,180,.08) 24px 25px);border-radius:8px}
+.slc .bd{position:absolute;left:30px;width:36px;border-radius:3px}
+.slc .wk{position:absolute;left:47px;width:2px}
+.slc .kn{position:absolute;left:22px;width:52px;height:14px;margin-top:-7px;border-radius:8px;border:2px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.5)}
+.slc .en{position:absolute;left:0;right:0;border-top:2px dashed #c8cedc}
+.slc .en span{position:absolute;right:2px;top:-17px;font-size:10px;color:var(--mut)}
+.slc .inf{flex:1;display:flex;flex-direction:column;justify-content:space-between;font-size:13px;min-width:0}
+.slc .inf b{font-size:18px}
 </style>
 </head>
 <body>
@@ -1891,7 +1901,7 @@ function renderStratList(){
       a.id=uid(); b.id=uid(); a.dir='long'; b.dir='short'; a.name='CALL · '+s.name; b.name='PUT · '+s.name; a.color=null; b.color=null; [a,b].forEach(function(x){ if(x.bySym) for(var k in x.bySym) x.bySym[k].dir=x.dir; delete x.res; });
       S.strats.splice(idx,1,a,b); stratColor(a); stratColor(b); save(); renderStratList(); renderSignals(); toast('Split into two strategies – tune each one separately',3000); }; tr.appendChild(sp); }
     det.appendChild(tr);
-    [['Edit',function(){ editStrategy(s); }],['✎ SL/TP on chart',function(){ veStart(s); }],['Backtest',function(){ btGoto(S.profSym||S.sym,s.id,s.res&&s.res.tf,s.res&&s.res.days); btWork=null; btDirty=false; showView('bt'); }],['Export',function(){ exportStrat(s); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
+    [['Edit',function(){ editStrategy(s); }],['Backtest',function(){ btGoto(S.profSym||S.sym,s.id,s.res&&s.res.tf,s.res&&s.res.days); btWork=null; btDirty=false; showView('bt'); }],['Export',function(){ exportStrat(s); }],['Copy',function(){ var cp=JSON.parse(JSON.stringify(s)); cp.id=uid(); cp.name=s.name+' (copy)'; cp.onChart=false; S.strats.splice(idx+1,0,cp); save(); renderStratList(); }],['Delete',function(){ if(c.dataset.del){ S.strats.splice(idx,1); save(); renderStratList(); renderSignals(); } else { c.dataset.del=1; this.textContent='Tap again to delete'; } },'danger']].forEach(function(a){ var b=el('button',{class:'btn sm '+(a[2]||'')},a[0]); b.onclick=a[1]; acts.appendChild(b); });
     var cp=el('input',{type:'color',value:stratColor(s),title:'Colour on chart',style:'width:36px;height:30px;padding:0;border:1px solid var(--bd);border-radius:8px;background:none'}); cp.onchange=function(){ s.color=cp.value; save(); renderStratList(); renderSignals(); }; acts.appendChild(cp);
     det.appendChild(acts); c.appendChild(det); box.appendChild(c);
   });
@@ -2096,7 +2106,7 @@ function editStrategy(orig,isNew){
 }
 
 // ---------------- backtest UI ----------------
-var btMarks=null, eqChart=null, chartTemp=null;
+var btMarks=null, eqChart=null, chartTemp=null, BTLAST=null;
 function fillBtStrat(){ var v=$('btStrat').value; $('btStrat').innerHTML=''; S.strats.forEach(function(s){ $('btStrat').appendChild(el('option',{value:s.id},s.name)); }); if(v && S.strats.some(function(s){return s.id===v;})) $('btStrat').value=v; }
 fillSym($('btSym'),S.sym);
 Object.keys(TF).forEach(function(tf){ $('btTf').appendChild(el('option',{value:tf},tf)); });
@@ -2236,7 +2246,7 @@ function runBt(){
   getBtData(sym,tf,days,btProg(out,'Loading '+symName(sym)+' '+tf)).then(function(Dx){
     if(!Dx.n){ out.innerHTML='<div class="card">No data.</div>'; return; }
     var lc=Dx.n-1; if(tf!=='1d' && nowIST()<Dx.t[lc]+TF[tf].min*60) lc--;
-    var cut=btCut(Dx,days), tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=btCfg(), fx=(cfg.inst!=='pts'&&cfg.comp)?(function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var cl=tr.map(function(t){ return Object.assign({},t); }); rupeeTrades(cl,c2); return cl.filter(function(t){ return t.why!=='Open'; }).reduce(function(a,t){ return a+(t.rs||0); },0); })():null, rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
+    var cut=btCut(Dx,days), tr=backtest(Dx,sideStrat(s),TF[tf].min,cost,lc).filter(function(t){ return t.t>=cut.c; }), st=btStats(tr), cfg=(BTLAST={tr:tr,sym:sym},btCfg()), fx=(cfg.inst!=='pts'&&cfg.comp)?(function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var cl=tr.map(function(t){ return Object.assign({},t); }); rupeeTrades(cl,c2); return cl.filter(function(t){ return t.why!=='Open'; }).reduce(function(a,t){ return a+(t.rs||0); },0); })():null, rs=cfg.inst!=='pts'?rupeeTrades(tr,cfg):null, pv=function(t){ return rs?t.rs:t.pts; };
     var html='<div class="card" data-k="sum"><h3 class="chd">'+s.name+sideTag()+(btDirty?' <small class="mut">(edited, not saved)</small>':'')+'</h3><div class="small mut" style="margin-bottom:8px">'+symName(sym)+' · '+tf+' · '+dmy(Dx.t[cut.i])+' → '+dmy(Dx.t[Dx.n-1])+' · cost '+cost+' pts/trade'+btSrcNote(Dx,cut,days)+'</div>'+statCards(st)+'</div>';
     if(rs) html+=rsCard(rs,cfg);
     // explain gaps between this backtest and the Tune result shown on the strategy line
@@ -2447,6 +2457,39 @@ function trailDcaRows(e,ch){
   box.appendChild(el('p',{class:'hint',style:'margin:4px 0 0'},'DCA buys one more unit each time price moves the set points against you, then exits all at the profit target from the average price. It replaces the normal stop / target while on. Risky with options – one bad day can stack several losing units.'));
   return box;
 }
+
+// ---------- candle slider: drag the big green candle (target) and big red candle (stop) ----------
+function slCandle(e,isPut,label,ch){
+  var tr=(BTLAST&&BTLAST.tr||[]).filter(function(t){ return isPut===null||t.side===(isPut?-1:1); }), avg=function(f){ var a=tr.map(f).filter(function(x){ return x>0&&isFinite(x); }); return a.length?a.reduce(function(p,q){return p+q;},0)/a.length:0; };
+  var px=avg(function(t){ return t.entry; })||(D&&D.n?D.c[D.n-1]:20000), max=Math.max(20,Math.round(px*0.004/5)*5);
+  var sl=e.sl&&e.sl.type==='pts'?+e.sl.v:Math.round(avg(function(t){ return t.risk; }))||Math.round(max*0.25);
+  var tp=e.tp&&e.tp.type==='pts'?+e.tp.v:e.tp&&e.tp.type==='none'?0:Math.round(avg(function(t){ return Math.abs(t.tgt-t.entry); }))||Math.round(max*0.4);
+  sl=Math.min(max,Math.max(1,sl)); tp=Math.min(max,Math.max(0,tp));
+  var guess=!(e.sl&&e.sl.type==='pts')||!(e.tp&&(e.tp.type==='pts'||e.tp.type==='none'));
+  var box=el('div',{class:'slc'}), trk=el('div',{class:'trk'}), H=250, mid=H/2, ppx=(H/2-12)/max;
+  var gB=el('div',{class:'bd',style:'background:#26a69a'}), gW=el('div',{class:'wk',style:'background:#26a69a'}), gK=el('div',{class:'kn',style:'background:#26a69a'});
+  var rB=el('div',{class:'bd',style:'background:#ef5350'}), rW=el('div',{class:'wk',style:'background:#ef5350'}), rK=el('div',{class:'kn',style:'background:#ef5350'});
+  var en=el('div',{class:'en',style:'top:'+mid+'px'},'<span>entry</span>');
+  [gW,rW,gB,rB,en,gK,rK].forEach(function(x){ trk.appendChild(x); });
+  var inf=el('div',{class:'inf'}); box.appendChild(trk); box.appendChild(inf);
+  // CALL: profit is up (green above entry). PUT: profit is down (green below entry).
+  function place(B,W,K,v,up){ var h=v*ppx; if(up){ B.style.top=(mid-h)+'px'; B.style.height=h+'px'; W.style.top=(mid-h-10)+'px'; W.style.height='10px'; K.style.top=(mid-h)+'px'; }
+    else { B.style.top=mid+'px'; B.style.height=h+'px'; W.style.top=(mid+h)+'px'; W.style.height='10px'; K.style.top=(mid+h)+'px'; } }
+  function draw(){ place(gB,gW,gK,tp,!isPut); place(rB,rW,rK,sl,!!isPut);
+    inf.innerHTML='<div><span class="mut small">'+label+(guess?' · started from your average':'')+'</span><br><span class="up">Target</span> <b class="up">'+(tp?'+'+tp+' pts':'none')+'</b></div>'+
+      '<div class="small mut">Reward : risk <b style="color:var(--tx)">'+(tp&&sl?fmt(tp/sl,2):'–')+'</b><br>Needs over <b style="color:var(--tx)">'+(tp?fmt(100*sl/(sl+tp),0)+'%':'–')+'</b> wins to break even (before charges)</div>'+
+      '<div><span class="dn">Stop loss</span> <b class="dn">−'+sl+' pts</b><br><span class="mut small">Drag the candles · scale ±'+max+' pts</span></div>'; }
+  draw();
+  var drag=null;
+  function val(cy){ var r=trk.getBoundingClientRect(), y=cy-r.top, d=Math.round(Math.abs(mid-y)/ppx); return Math.max(0,Math.min(max,d)); }
+  function start(cy){ var r=trk.getBoundingClientRect(), y=cy-r.top, upHalf=y<mid; drag=(upHalf!==!!isPut)?'tp':'sl'; move(cy); }
+  function move(cy){ if(!drag) return; var v=val(cy); if(drag==='tp') tp=v; else sl=Math.max(1,v); guess=false; draw(); }
+  function end(){ if(!drag) return; drag=null; e.sl={type:'pts',v:sl,buf:0}; e.tp=tp?{type:'pts',v:tp}:{type:'none',v:0}; ch(); }
+  trk.addEventListener('touchstart',function(ev){ ev.preventDefault(); start(ev.touches[0].clientY); },{passive:false});
+  trk.addEventListener('touchmove',function(ev){ ev.preventDefault(); move(ev.touches[0].clientY); },{passive:false});
+  trk.addEventListener('touchend',function(ev){ ev.preventDefault(); end(); },{passive:false});
+  trk.addEventListener('mousedown',function(ev){ ev.preventDefault(); start(ev.clientY); var mm=function(x){ move(x.clientY); }, mu=function(){ document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); end(); }; document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu); });
+  return box; }
 function btQuick(){
   var box=$('btQuick'); box.innerHTML='';
   var orig=S.strats.find(function(x){return x.id===$('btStrat').value;}); if(!orig) return;
@@ -2474,6 +2517,8 @@ function btQuick(){
   if(s.pattern==='mtf_pa') d.appendChild(m15Row(e,ch));
   if(s.pattern==='fib_pa') d.appendChild(fibRow(e,ch));
   if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('ORB minutes',num(e.pat.orbMins||15,function(v){e.pat.orbMins=v;ch();}))); d.appendChild(r2b); }
+  var isPut=s.sides?btQSide==='short':(s.dir==='short'?true:s.dir==='long'?false:null);
+  d.appendChild(slCandle(e,isPut===true,s.sides?(btQSide==='short'?'PUT':'CALL'):(s.dir==='short'?'PUT':s.dir==='long'?'CALL':'CALL & PUT'),function(){ ch(); btQuick(); }));
   var r3=el('div',{class:'row',style:'margin-top:6px'});
   var fv3=field('SL value (pts / % / ×ATR)',num(e.sl.v||'',function(v){e.sl.v=v;ch();})), fb3=field('SL buffer beyond candles (pts)',num(e.sl.buf||0,function(v){e.sl.buf=v;ch();})), tv4;
   r3.appendChild(field('Stop loss',sel([['pattern','Pattern candles'],['candle','Signal candle'],['pts','Fixed points'],['pct','Fixed %'],['atr','ATR multiple']],e.sl.type||'pattern',function(v){e.sl.type=v; slVis(e,fv3,fb3,tv4); ch();})));
@@ -2499,7 +2544,7 @@ function btQuick(){
   var bs=el('button',{class:'btn sm pri'},'💾 Save to strategy'); bs.onclick=function(){ var i=S.strats.findIndex(function(x){return x.id===s.id;}); if(i>=0){ var keep=S.strats[i].onChart; S.strats[i]=JSON.parse(JSON.stringify(s)); S.strats[i].onChart=keep; } btDirty=false; save(); renderSignals(); btQuick(); toast('Saved “'+s.name+'”',2000); };
   var bn=el('button',{class:'btn sm'},'Save as new'); bn.onclick=function(){ var c=JSON.parse(JSON.stringify(s)); c.id=uid(); c.name=s.name+' (v'+(S.strats.length+1)+')'; c.onChart=false; S.strats.push(c); save(); btWork=null; btDirty=false; fillBtStrat(); $('btStrat').value=c.id; btQuick(); toast('Saved as “'+c.name+'”',2500); };
   var br=el('button',{class:'btn sm'},'↺ Reset'); br.onclick=function(){ btWork=null; btDirty=false; btQuick(); runBt(); };
-  var bve=el('button',{class:'btn sm',style:'border-color:var(--acc)'},'✎ Edit SL / target on the chart'); bve.onclick=function(){ veStart(s,$('btSym').value,$('btTf').value); }; r6.appendChild(bve);
+
   var ba=el('button',{class:'btn sm',style:'border-color:var(--warn)'},'📈 Apply to chart + replay'); ba.onclick=function(){
     var c=JSON.parse(JSON.stringify(s)); c.name=s.name+(btDirty?' (test)':''); c.onChart=true; chartTemp=c;
     var sym=$('btSym').value, tf=$('btTf').value, need=(S.sym!==sym||S.tf!==tf);
