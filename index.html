@@ -2107,6 +2107,18 @@ function runBt(){
         if(s.dir!==sideStrat(s).dir||$('btOn')&&0) diff.push('CALL/PUT switched off here');
         notes.push('Tune result on the strategy line: <b>'+fmtL(tr0.net,true)+'</b> on '+tr0.tf+' over '+Math.round((tr0.days||1825)/365)+' years (fixed size).'+(diff.length?' It was tested on '+diff.join(', ')+' – <a href="#" id="btMatch">match those settings</a>.':'')); }
       if(notes.length) html+='<div class="card" style="border-left:3px solid var(--warn)"><p class="hint" style="margin:0">'+notes.join('<br><br>')+'</p></div>'; })();
+    // learn vs exam: settings should be judged on the first 70%; the last 30% is the "exam" they must also pass
+    (function(){ var c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var T=tr.filter(function(t){ return t.why!=='Open'; }).map(function(t){ return Object.assign({},t); }); if(rs) rupeeTrades(T,c2);
+      if(T.length<10) return; var t0=Dx.t[cut.i], t1=Dx.t[lc], sp=t0+(t1-t0)*0.7, MD=30.44*86400;
+      var pr=function(A,mons){ var n=A.length,w=0,gp=0,gl=0,net=0; A.forEach(function(t){ var v=rs?t.rs:t.pts; net+=v; if(v>0){w++;gp+=v;} else gl-=v; }); return {n:n,win:n?100*w/n:0,pf:gl>0?gp/gl:(gp>0?99:0),mo:net/Math.max(1,mons),net:net}; };
+      var A=pr(T.filter(function(t){ return t.t<sp; }),(sp-t0)/MD), B=pr(T.filter(function(t){ return t.t>=sp; }),(t1-sp)/MD);
+      var f=function(x){ return rs?fmtL(x,true):fmt(x,0)+' pts'; }, ok=B.mo>0 && B.pf>=1.05, weak=B.mo>0 && B.mo<0.5*A.mo;
+      var row=function(l,x){ return '<tr><td>'+l+'</td><td>'+x.n+'</td><td>'+fmt(x.win,1)+'%</td><td>'+fmt(x.pf,2)+'</td><td class="'+(x.mo>=0?'up':'dn')+'">'+f(x.mo)+'</td></tr>'; };
+      html+='<div class="card" data-k="exam" style="border-left:3px solid '+(ok&&!weak?'var(--up)':ok?'var(--warn)':'var(--dn)')+'"><b>🎓 Does it hold up on later data?</b>'+
+        '<div style="overflow:auto;margin-top:6px"><table style="font-size:12px"><tr><th>Part</th><th>Trades</th><th>Win %</th><th>PF</th><th>per month</th></tr>'+
+        row('First 70% <span class="mut">'+dmy(t0)+' → '+dmy(sp)+'</span>',A)+row('<b>Last 30%</b> <span class="mut">'+dmy(sp)+' → '+dmy(t1)+'</span>',B)+'</table></div>'+
+        '<p class="hint" style="margin:6px 0 0">'+(ok&&!weak?'✅ Still profitable in the last 30% at a similar rate – a good sign.':ok?'⚠️ Still profitable in the last 30%, but at less than half the earlier rate – the edge may be fading.':'❌ Lost money (or barely broke even) in the last 30% – the earlier profit may be luck or over-tuning.')+
+        ' Tip: tweak settings while watching only the <b>first 70%</b> row; the last-30% row is the exam. If you tweak until the exam looks good, it stops being a fair test.</p></div>'; })();
     // which "exit after N candles" wins most often? same signals, same stop / target, only the time exit changes
     (function(){ var Ns=[1,2,3,4,5,6,8,10,15,20,0], rows=[], c2=JSON.parse(JSON.stringify(cfg)); c2.comp=false; var base=sideStrat(s);
       Ns.forEach(function(N){ var x=JSON.parse(JSON.stringify(base)); x.holdBars=N; if(x.sides){ if(x.sides.long) x.sides.long.holdBars=N; if(x.sides.short) x.sides.short.holdBars=N; }
