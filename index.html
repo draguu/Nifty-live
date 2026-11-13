@@ -366,6 +366,7 @@ body.ve #chart,body.ve #chart *{touch-action:none!important}
       <div class="row" style="margin-top:10px">
         <button class="btn pri grow" id="btRun">▶ Run backtest</button>
         <button class="btn" id="btAll">Compare all</button>
+        <button class="btn" id="btExp2" title="Download the candles of this symbol, timeframe and period">⬇ Data</button>
       </div>
       <p class="hint" style="margin:8px 0 0">Points = price points of the symbol. ₹ uses the Zerodha charges above (CALL = long, PUT = short for futures/equity). History: intraday since Jan 2022, daily 10 years.</p>
     </div>
@@ -2636,6 +2637,18 @@ function btMatchRes(run){ var s=S.strats.find(function(x){ return x.id===$('btSt
   if(run) runBt(); return ch; }
 $('btStrat').onchange=function(){ btWork=null; btDirty=false; btMatchRes(false); btQuick(); };
 $('btnTemp').onclick=function(){ chartTemp=null; btMarks=null; renderSignals(); toast('Test / backtest marks removed from chart',2000); };
+// export the fetched candles (symbol + timeframe + period chosen above) as CSV – gzipped when the browser can, so 5 years of 1m stays small
+$('btExp2').onclick=function(){ var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, out=$('btOut'), b=this; b.disabled=true;
+  getBtData(sym,tf,days,btProg(out,'Loading '+symName(sym)+' '+tf)).then(function(Dx){
+    var L=new Array(Dx.n+1); L[0]='time_ist,open,high,low,close,volume';
+    for(var i=0;i<Dx.n;i++){ var d=new Date(Dx.t[i]*1000).toISOString(); L[i+1]=d.slice(0,10)+' '+d.slice(11,16)+','+Dx.o[i]+','+Dx.h[i]+','+Dx.l[i]+','+Dx.c[i]+','+(Dx.v[i]||0); }
+    var txt=L.join('\n'), name=symName(sym).replace(/[^\w]+/g,'_')+'_'+tf+'_'+dmy(Dx.t[0]).replace(/\//g,'-')+'_to_'+dmy(Dx.t[Dx.n-1]).replace(/\//g,'-')+'.csv';
+    var dl=function(blob,nm){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nm; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },2000);
+      out.innerHTML='<div class="card">⬇ Saved <b>'+nm+'</b> – '+Dx.n.toLocaleString('en-IN')+' candles, '+(blob.size/1048576).toFixed(1)+' MB ('+(Dx.src||'')+'). Attach this file in the chat to have strategies tested on it.</div>'; };
+    var plain=new Blob([txt],{type:'text/csv'});
+    if(window.CompressionStream && plain.size>3e6){ new Response(plain.stream().pipeThrough(new CompressionStream('gzip'))).blob().then(function(z){ dl(new Blob([z],{type:'application/gzip'}),name+'.gz'); },function(){ dl(plain,name); }); }
+    else dl(plain,name);
+  }).catch(function(e){ out.innerHTML='<div class="card dn">Could not load data: '+e.message+'</div>'; }).then(function(){ b.disabled=false; }); };
 $('btAll').onclick=function(){
   var sym=$('btSym').value, tf=$('btTf').value, days=+$('btDays').value, cost=+$('btCost').value||0, out=$('btOut');
   out.innerHTML='<div class="card">Running all strategies…</div>';
