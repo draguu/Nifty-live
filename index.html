@@ -816,12 +816,14 @@ function patternArrs(D,s){
     return {L:L,S:S}; }
   if(type==='ib_vol'){ // mother candle with high volume, next candle inside it with at least X% of that volume
     var vm=(P.volMult!=null?+P.volMult:150)/100, ip=(P.insidePct!=null?+P.insidePct:50)/100, al=Math.max(2,+P.avgLen||20), sum=0, AV=new Array(n).fill(0), hasV=false;
-    for(i=0;i<n;i++){ if(D.v[i]>0) hasV=true; AV[i]=i>=al?sum/al:(i?sum/i:0); sum+=D.v[i]||0; if(i>=al) sum-=D.v[i-al]||0; }
+    // activity measure: real volume, or candle size (high − low) for indices, which have no volume
+    var V=new Array(n), useR=P.src==='range'; for(i=0;i<n;i++){ V[i]=useR?(D.h[i]-D.l[i]):(D.v[i]||0); }
+    for(i=0;i<n;i++){ if(V[i]>0) hasV=true; AV[i]=i>=al?sum/al:(i?sum/i:0); sum+=V[i]; if(i>=al) sum-=V[i-al]; }
     if(!hasV && (vm>0||ip>0)) return {L:L,S:S,noVol:true};
     for(i=1;i<n;i++){ if(D.t[i]%86400!==0 && D.day[i]!==D.day[i-1]) continue;
       var mo=D.o[i-1], mc=D.c[i-1], io=D.o[i], ic=D.c[i];
       if(!(D.h[i]<=D.h[i-1] && D.l[i]>=D.l[i-1])) continue;           // inside bar
-      var mv=D.v[i-1]||0, iv=D.v[i]||0;
+      var mv=V[i-1], iv=V[i];
       if(vm>0 && !(AV[i-1]>0 && mv>=vm*AV[i-1])) continue;            // mother: high volume vs recent average
       if(ip>0 && iv<ip*mv) continue;                                   // inside: at least X% of mother's volume
       if(mc<mo && ic>io) L[i]=true; if(mc>mo && ic<io) S[i]=true; }
@@ -2381,7 +2383,7 @@ function optSpace(base,tf){
     P.push({n:'Size ≤ ×',vals:[1,1.2,1.5,2,3],set:setp('rMax')});
     P.push({n:'Min body %',vals:[0.02,0.05,0.1,0.15,0.2,0.3],set:setp('minBodyPct')});
   }
-  if(pat==='ib_vol'){ P.push({n:'Mother volume ≥ % of average',vals:[0,100,125,150,200,250,300],set:setp('volMult')}); P.push({n:'Inside volume ≥ % of mother',vals:[0,30,50,70,100],set:setp('insidePct')}); }
+  if(pat==='ib_vol'){ P.push({n:'Activity from',vals:['vol','range'],set:setp('src')}); P.push({n:'Mother volume ≥ % of average',vals:[0,100,125,150,200,250,300],set:setp('volMult')}); P.push({n:'Inside volume ≥ % of mother',vals:[0,30,50,70,100],set:setp('insidePct')}); }
   if(pat==='orb_break') P.push({n:'ORB minutes',vals:[5,15,30,60],set:setp('orbMins')});
   if(pat==='mtf_pa'){ P.push({n:'5m / 15m rule',vals:['any','base2','break15','rej15','inside15','eng15','pull15'],set:setp('rule')}); P.push({n:'Max wick %',vals:[5,10,15,25,35],set:setp('wickPct')}); P.push({n:'Min body %',vals:[40,50,60,70,80],set:setp('bodyPct')}); }
   if(pat==='fib_pa'){
@@ -2592,10 +2594,11 @@ function btQuick(){
   if(s.pattern==='mtf_pa') d1.appendChild(m15Row(pe,ch));
   if(s.pattern==='fib_pa') d1.appendChild(fibRow(pe,ch));
   if(s.pattern==='ib_vol'){ var r2v=el('div',{class:'row',style:'margin-top:6px'});
+    r2v.appendChild(field('Measure activity by',sel([['vol','Volume (stocks)'],['range','Candle size high−low (Nifty / Bank Nifty)']],pe.pat.src||(isStock($('btSym').value)?'vol':'range'),function(v){ pe.pat.src=v; ch(); })));
     r2v.appendChild(field('1st candle volume ≥ % of avg (0 = off)',num(pe.pat.volMult!=null?pe.pat.volMult:150,function(v){pe.pat.volMult=v;ch();},1)));
     r2v.appendChild(field('2nd candle volume ≥ % of 1st (0 = off)',num(pe.pat.insidePct!=null?pe.pat.insidePct:50,function(v){pe.pat.insidePct=v;ch();},1)));
     r2v.appendChild(field('Average of last N candles',num(pe.pat.avgLen||20,function(v){pe.pat.avgLen=v;ch();},1)));
-    d1.appendChild(r2v); d1.appendChild(el('p',{class:'hint',style:'margin:4px 0 0'},'Example: 150 / 50 = the 1st candle needs 1.5× the average volume of the last 20 candles, and the inside candle at least half of the 1st candle’s volume. Nifty, Bank Nifty and Sensex have no volume – set both to 0 there (pure inside bar) or use a stock.')); }
+    d1.appendChild(r2v); d1.appendChild(el('p',{class:'hint',style:'margin:4px 0 0'},'Example: 150 / 50 = the 1st candle needs 1.5× the average volume of the last 20 candles, and the inside candle at least half of the 1st candle’s volume. Nifty, Bank Nifty and Sensex have no volume – pick “Candle size” there: the same % rules then apply to the candle’s high−low instead of volume.')); }
   if(s.pattern==='orb_break'){ var r2b=el('div',{class:'row',style:'margin-top:6px'}); r2b.appendChild(field('Opening range minutes',num(pe.pat.orbMins||15,function(v){pe.pat.orbMins=v;ch();}))); d1.appendChild(r2b); }
   d1.appendChild(el('h4',{style:'margin:10px 0 4px'},'<span class="up">CALL</span> filters – all must be true')); var lb=el('div'); d1.appendChild(lb); condListEditor(s,'long',lb);
   d1.appendChild(el('h4',{style:'margin:10px 0 4px'},'<span class="dn">PUT</span> filters – all must be true')); var sb=el('div'); d1.appendChild(sb); condListEditor(s,'short',sb);
